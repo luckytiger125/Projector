@@ -321,16 +321,39 @@ def issue_token(uid: int) -> str:
     return token
 
 
-def _token_from(request: Request) -> str:
+AUTH_COOKIE = "projector_token"
+COOKIE_MAX_AGE = TOKEN_IDLE_DAYS * 86400   # 和令牌的空闲有效期一致
+
+
+def set_auth_cookie(response, token: str) -> None:
+    """登录后顺带种一个 HttpOnly cookie，给 EventSource、<img>、<iframe>、下载链接这些带不了请求头的 GET 用，
+    这样令牌就不用再拼进网址（网址会进浏览器历史、访问日志、被复制走）。局域网里是明文 HTTP，所以不加 Secure。"""
+    response.set_cookie(AUTH_COOKIE, token, max_age=COOKIE_MAX_AGE, path="/", httponly=True, samesite="lax")
+
+
+def clear_auth_cookie(response) -> None:
+    response.delete_cookie(AUTH_COOKIE, path="/", httponly=True, samesite="lax")
+
+
+def _token_from(request: Request) -> tuple[str, bool]:
+    """返回 (令牌, 是否来自 cookie)。请求头永远可用；cookie 只对 GET/HEAD 生效。
+    这是防 CSRF 的关键：别的网站能让浏览器带着 cookie 发请求，但加不上自定义的 Authorization 头，
+    所以所有会改东西的请求（POST/PUT/PATCH/DELETE）必须带请求头，cookie 对它们不算数。不再接受网址里的 ?token=。"""
     given = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
-    return given or request.query_params.get("token", "")
+    if given:
+        return given, False
+    if request.method in ("GET", "HEAD"):
+        return request.cookies.get(AUTH_COOKIE, "").strip(), True
+    return "", False
 
 
 def current_user(request: Request) -> dict:
-    token = _token_from(request)
+    token, from_cookie = _token_from(request)
     if not token:
         raise HTTPException(401, "请先登录")
     if secrets.compare_digest(token, INTERNAL_TOKEN):
+        if from_cookie:   # 内部令牌只走请求头（approval_mcp.py），不接受 cookie
+            raise HTTPException(401, "请先登录")
         return INTERNAL
     row = db("SELECT u.*, t.last_used FROM tokens t JOIN users u ON u.id=t.user_id WHERE t.token=?", (token,), one=True)
     now = time.time()

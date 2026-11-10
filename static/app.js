@@ -19,7 +19,14 @@ let sections = [];           // 分区列表（后端 /api/sections）
 let currentSection = null;   // null=全部，0=未分类，其他=section_id
 let currentSess = null;      // 当前会话对象（可能是别人的，管理员查看时）
 let messages = [];
-let live = null;             // 正在进行的回复 {text, tools}
+let live = null;             // 正在进行的回复 {text, thinking, tools}
+let thinkOpen = false;       // “思考中”块是否被用户展开（完整重渲染后要保持）
+let snapSeq = 0;             // 当前会话详情快照的事件序号：seq 不大于它的会话事件已经包含在快照里，要忽略
+let listSeq = 0;             // 会话列表快照的事件序号（同理，用于 session 事件）
+let lastEventId = "";        // 最近收到的 SSE 事件 id，手动重连时带上
+let firstOpen = true;        // 这条事件流是不是第一次连上（第一次要拉全量；之后的重连靠服务端补发）
+let reconnectTimer = 0;
+const newLive = () => ({ text: "", thinking: "", tools: [] });
 let approvals = [];
 let questions = [];          // Claude 正在等你回答的问题（ask_user）
 const askState = {};         // 每组问题的作答状态：{step, ans: [{selected: [], other, note}]}
@@ -33,9 +40,11 @@ let liveSteps = 0;           // 实时步骤里已经显示过几步
 // ---------- 通用 ----------
 
 function api(path, opts = {}) {
+  const { onSeq, ...fetchOpts } = opts;   // onSeq：读出响应头 X-Event-Seq（列表快照的事件序号）
   const headers = { Authorization: "Bearer " + token, ...(opts.headers || {}) };
   if (!opts.raw) headers["Content-Type"] = "application/json";
-  return fetch(path, { ...opts, headers }).then(async r => {
+  return fetch(path, { ...fetchOpts, headers }).then(async r => {
+    if (onSeq) { const n = parseInt(r.headers.get("X-Event-Seq"), 10); if (n >= 0) onSeq(n); }
     if (r.status === 401 && !path.startsWith("/api/login")) { showLogin(); throw new Error("请先登录"); }
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || ("出错了：" + r.status));
@@ -348,7 +357,10 @@ function changePassword() {
     label: "保存", primary: true, onClick: async () => {
       if ($("pwNew").value !== $("pwNew2").value) throw new Error("两次新密码不一样");
       await post("/api/me/password", { old: $("pwOld").value, new: $("pwNew").value });
-      toast("密码已修改", "ok");
+      // 服务端改密码后会让所有登录失效（含 cookie），这里直接回到登录页
+      token = ""; store.del("token"); me = null;
+      showLogin();
+      toast("密码已修改，请用新密码重新登录", "ok");
     },
   }]);
 }
@@ -692,9 +704,14 @@ const sideOf = (t, who) => `<div class="side"><span class="tm">${t ? hm(t) : ""}
 const isWaiting = () => approvals.length > 0 || questions.length > 0;
 // 正在输出的那一条：完整渲染和流式增量更新都从这几个函数出模板，避免两边写法漂移
 function liveStepsHtml(waiting) { return live ? stepsLive(live.tools, waiting) : ""; }
+// 扩展思考：暗一点、默认折叠的“思考中”块，放在答复正文上面；只在实时条目里出现，回合结束就消失，也不入库
+function liveThinkHtml() {
+  if (!live || !live.thinking) return "";
+  return `<details class="steps think" data-think${thinkOpen ? " open" : ""}><summary>${icon("steps", 14)}思考中${icon("chevD", 14)}</summary><div class="think-body">${esc(live.thinking)}</div></details>`;
+}
 function liveMdHtml(waiting) { return `<div class="md ${waiting ? "" : "typing"}">${md(live.text)}</div>`; }
 function liveEntryHtml(waiting) {
-  return `<div class="entry" data-live>${sideOf(null, waiting ? "待确认" : "进行中")}<div class="body">${liveStepsHtml(waiting)}${liveMdHtml(waiting)}</div></div>`;
+  return `<div class="entry" data-live>${sideOf(null, waiting ? "待确认" : "进行中")}<div class="body">${liveStepsHtml(waiting)}${liveThinkHtml()}${liveMdHtml(waiting)}</div></div>`;
 }
 
 // 流式期间只更新正在输出的那一条，历史消息的 DOM 不动；同一帧内的多次事件合并成一次
@@ -720,6 +737,15 @@ function renderLive() {
     if (html) body.insertAdjacentHTML("afterbegin", html);
   }
   const mdEl = body.querySelector(":scope > .md");
+  // 思考块：只改文字，不重建 <details>，用户展开/折叠的状态就不会丢
+  const think = body.querySelector(":scope > details[data-think]");
+  if (!live.thinking) { if (think) think.remove(); }
+  else if (think) {
+    const tb = think.querySelector(".think-body");
+    const stick = tb.scrollHeight - tb.scrollTop - tb.clientHeight < 30;
+    tb.textContent = live.thinking;
+    if (stick) tb.scrollTop = tb.scrollHeight;
+  } else mdEl.insertAdjacentHTML("beforebegin", liveThinkHtml());
   mdEl.classList.toggle("typing", !waiting);
   mdEl.innerHTML = md(live.text);
   linkifyPaths(mdEl);
@@ -793,6 +819,9 @@ function approvalDetail(a) {
   return esc(JSON.stringify(i, null, 1));
 }
 
+// toggle 不冒泡，用捕获阶段记住“思考中”块的展开状态，完整重渲染时按它恢复
+$("list").addEventListener("toggle", e => { if (e.target.matches && e.target.matches("details[data-think]")) thinkOpen = e.target.open; }, true);
+
 $("list").addEventListener("click", e => {
   if (e.target.closest("[data-distill]")) { e.target.closest("[data-distill]").disabled = true; return window.kbDistill(); }
   const card = e.target.closest(".w-card");
@@ -821,8 +850,9 @@ $("list").addEventListener("click", e => {
 
 async function loadSessions() {
   const qs = currentSection === null ? "" : `?section_id=${encodeURIComponent(currentSection)}`;
-  try { sessions = await api("/api/sessions" + qs); }
-  catch { sessions = await api("/api/sessions"); }
+  const onSeq = n => { listSeq = n; };
+  try { sessions = await api("/api/sessions" + qs, { onSeq }); }
+  catch { sessions = await api("/api/sessions", { onSeq }); }
   renderSessions();
 }
 
@@ -845,6 +875,7 @@ function openDrawer() {
 
 async function openSession(id) {
   current = id;
+  snapSeq = 0;
   closeDrawer();
   seen.clear(); liveSteps = 0;
   if (!id) {
@@ -855,6 +886,8 @@ async function openSession(id) {
   setView("chat");
   const data = await api("/api/sessions/" + id);
   if (current !== id) return;
+  snapSeq = data.seq || 0;
+  thinkOpen = false;
   currentSess = data.session; messages = data.messages; live = data.live; approvals = data.approvals; questions = data.questions || [];
   links = await api(`/api/sessions/${id}/links`).catch(() => []);
   renderSessions(); renderMessages(true); renderAsk();
@@ -871,8 +904,8 @@ function showHome() {
   renderSessions();
 }
 
-function upsertSession(s) {
-  if (s.user_id === me.id) {
+function upsertSession(s, skipList = false, skipCurrent = false) {
+  if (s.user_id === me.id && !skipList) {
     const i = sessions.findIndex(x => x.id === s.id);
     if (i >= 0) sessions.splice(i, 1);
     sessions.unshift(s);
@@ -880,7 +913,7 @@ function upsertSession(s) {
     renderSessions();
   }
   if (window.adminOnSession) window.adminOnSession(s);
-  if (s.id === current) { currentSess = s; if (!s.running) { live = null; liveSteps = 0; } renderMessages(); }
+  if (s.id === current && !skipCurrent) { currentSess = s; if (!s.running) { live = null; liveSteps = 0; } renderMessages(); }
 }
 
 function notify(text) {
@@ -893,20 +926,39 @@ function notify(text) {
   try { new Notification("Claude 工作台", { body: text }); } catch {}
 }
 
-function connect() {
+// 断线重连：EventSource 自动重连时浏览器会带 Last-Event-ID，服务端补发错过的事件；补不了就先发一个 resync 事件。
+// 所以只有“第一次连上”和收到 resync 时才整体重新拉数据，普通的短暂断线不再重拉。
+function reloadAll() {
+  loadSessions();
+  if (current) openSession(current);
+  if (!F.roots.length) api("/api/files").then(d => { F.roots = d.roots; F.office = d.office; renderMessages(); renderHome(); }).catch(() => {});
+}
+
+function connect(manual = false) {
+  clearTimeout(reconnectTimer);
   if (es) es.close();
-  es = new EventSource("/api/events?token=" + encodeURIComponent(token));
+  if (!manual) { lastEventId = ""; firstOpen = true; }
+  else if (!lastEventId) firstOpen = true;   // 没有可续的 id（还没收到过事件）：重连后整体重拉
+  // 令牌在 HttpOnly cookie 里，不放进网址
+  es = new EventSource("/api/events" + (manual && lastEventId ? "?last_id=" + encodeURIComponent(lastEventId) : ""));
   es.onopen = () => {
-    $("conn").textContent = ""; loadSessions(); if (current) openSession(current);
-    if (!F.roots.length) api("/api/files").then(d => { F.roots = d.roots; F.office = d.office; renderMessages(); renderHome(); }).catch(() => {});
+    $("conn").textContent = "";
+    if (firstOpen) { firstOpen = false; reloadAll(); }
   };
   es.onerror = () => {
     $("conn").textContent = "重新连接中";
     api("/api/me").then(u => { me = { ...me, ...u }; }).catch(() => {});  // 登录失效时会弹出登录页
+    // 服务端回了非 200（比如重启中的 502）时 EventSource 不会自己重连：这里手动重连，带上最后的事件 id
+    if (es && es.readyState === 2 && token) { clearTimeout(reconnectTimer); reconnectTimer = setTimeout(() => connect(true), 3000); }
   };
   es.onmessage = e => {
     const ev = JSON.parse(e.data);
-    if (ev.type === "session") return upsertSession(ev.session);
+    if (e.lastEventId) lastEventId = e.lastEventId;
+    if (ev.type === "resync") return reloadAll();
+    // 会话事件序号不大于详情快照的 seq：它的效果已经包含在快照里了，再应用会重复（比如 delta 文本）
+    const evSid = ev.session_id || (ev.approval && ev.approval.session_id) || (ev.question && ev.question.session_id) || (ev.session && ev.session.id);
+    if (ev.seq && evSid && evSid === current && ev.seq <= snapSeq && ev.type !== "session") return;
+    if (ev.type === "session") return upsertSession(ev.session, ev.seq <= listSeq, evSid === current && ev.seq <= snapSeq);
     if (ev.type === "session_deleted") {
       sessions = sessions.filter(s => s.id !== ev.session_id); renderSessions();
       if (current === ev.session_id) showHome();
@@ -927,13 +979,14 @@ function connect() {
     if (sid !== current) return;
     if (ev.type === "message") {
       if (!messages.some(m => m.id === ev.message.id)) messages.push(ev.message);
-      if (ev.message.role === "user") { live = { text: "", tools: [] }; liveSteps = 0; seen.delete("live"); }
+      if (ev.message.role === "user") { live = newLive(); thinkOpen = false; liveSteps = 0; seen.delete("live"); }
       else if (ev.message.role !== "event") { live = null; liveSteps = 0; }
-    } else if (ev.type === "approval") { approvals.push(ev.approval); }
+    } else if (ev.type === "approval") { if (!approvals.some(a => a.id === ev.approval.id)) approvals.push(ev.approval); }
     else if (ev.type === "approval_done") { approvals = approvals.filter(a => a.id !== ev.id); }
-    else if (ev.type === "delta_reset") { live = { text: "", tools: live ? live.tools : [] }; return scheduleLive(); }
-    else if (ev.type === "delta") { live = live || { text: "", tools: [] }; live.text += ev.text; return scheduleLive(); }
-    else if (ev.type === "tool") { live = live || { text: "", tools: [] }; live.tools.push({ name: ev.name, detail: ev.detail }); return scheduleLive(); }
+    else if (ev.type === "delta_reset") { live = { ...newLive(), tools: live ? live.tools : [] }; return scheduleLive(); }
+    else if (ev.type === "delta") { live = live || newLive(); live.text += ev.text; return scheduleLive(); }
+    else if (ev.type === "thinking") { live = live || newLive(); live.thinking = (live.thinking || "") + ev.text; return scheduleLive(); }
+    else if (ev.type === "tool") { live = live || newLive(); live.tools.push({ name: ev.name, detail: ev.detail }); return scheduleLive(); }
     renderMessages();
   };
 }
@@ -1260,7 +1313,7 @@ async function syncBack(lid) {
   const local = IS_DESKTOP ? await invoke("local_link_path", { linkId: lid }).catch(() => null) : null;
   const row = (it, tag, cls) => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)">
      <span class="status ${cls}">${tag}</span><a class="fpath" data-fp="${esc(it.path)}" style="flex:1">${esc(it.rel)}</a><span class="muted" style="font-size:12px">${fsize(it.size)}</span>
-     ${local ? "" : `<a class="btn small" href="/api/files/raw?path=${encodeURIComponent(it.path)}&download=1&token=${encodeURIComponent(token)}" download>${icon("download", 13)}</a>`}</div>`;
+     ${local ? "" : `<a class="btn small" href="/api/files/raw?path=${encodeURIComponent(it.path)}&download=1" download>${icon("download", 13)}</a>`}</div>`;
   const body = n || ch.deleted.length ? `
     ${ch.added.map(i => row(i, "新增", "approved")).join("")}
     ${ch.modified.map(i => row(i, "修改", "pending")).join("")}
@@ -1304,7 +1357,7 @@ function fileBadge(e) {
   const k = kindOf(e.name), ext = (e.name.includes(".") ? e.name.split(".").pop() : "").slice(0, 4).toUpperCase() || "FILE";
   return `<span class="fk" style="background:${KIND_COLOR[k]}">${esc(ext)}</span>`;
 }
-const fileUrl = (p, extra = "") => `/api/files/${extra || "raw"}?path=${encodeURIComponent(p)}&token=${encodeURIComponent(token)}`;
+const fileUrl = (p, extra = "") => `/api/files/${extra || "raw"}?path=${encodeURIComponent(p)}`;
 
 const libs = {};
 function loadScript(src) {
@@ -1982,5 +2035,7 @@ $("title").ondblclick = async () => {
 
 // ---------- 启动 ----------
 
-if (token) api("/api/me").then(enter).catch(() => {});
+// 升级前登录的人只有 localStorage 里的令牌、没有 cookie：先用请求头补种一次，再 connect()（enter 里）。
+// 补种失败不拦着：401 时 api() 已经弹出登录页，其他错误（比如网络）继续往下走，/api/me 自己会处理。
+if (token) api("/api/session-cookie", { method: "POST" }).catch(() => {}).then(() => api("/api/me")).then(enter).catch(() => {});
 else showLogin();

@@ -271,6 +271,8 @@ details.steps summary:hover { color: var(--ink); }
 details.steps summary .ic:last-child { transition: transform .3s var(--ease); }
 details.steps[open] summary .ic:last-child { transform: rotate(180deg); }
 details.steps[open] .tl { margin-top: 10px; animation: down .3s var(--ease); }
+details.think { opacity: .75; }
+details.think .think-body { margin-top: 8px; padding: 2px 0 2px 12px; border-left: 2px solid var(--line); font-size: 12.5px; line-height: 1.6; color: var(--faint); white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow-y: auto; }
 
 /* 确认工单 */
 .ticket { display: flex; margin: 0 0 26px 37px; background: var(--raised); border-radius: 16px; box-shadow: var(--shadow-lg); position: relative; animation: drop .6s var(--spring) both; overflow: hidden; border: 1px solid var(--line); }
@@ -1062,7 +1064,7 @@ a.wl.ghost::before { background: none; border: 1px dashed var(--faint); width: 4
   </section>
 </div></div>
 
-<script src="/static/app.js?v=0.8.0-dev1"></script>
+<script src="/static/app.js?v=0.8.0-dev2"></script>
 <script src="/static/admin.js?v=0.8.0-dev1"></script>
 <script src="/static/kb.js?v=0.7.0"></script>
 </body>

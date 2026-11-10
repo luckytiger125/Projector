@@ -17,6 +17,7 @@ import sections
 import skills_api
 import usage
 from approvals import APPROVAL_TIMEOUT, pending_for, questions_for
+from events import lock as events_lock
 from events import add_message, broadcast, push_session
 from store import (BASE, DATA, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, can_bypass, current_user, db, db_insert,
                    find_claude, get_setting, get_user, jdump, posix_rule_path, session_for, session_workspace, user_ws_dir)
@@ -247,9 +248,12 @@ def run_claude(run: "Run", prompt: str, cmd: list[str], cwd: str, emit) -> dict:
                 if inner.get("type") == "message_start":
                     emit({"type": "delta_reset"})
                 elif inner.get("type") == "content_block_delta":
-                    text = inner.get("delta", {}).get("text")
-                    if text:
-                        emit({"type": "delta", "text": text})
+                    delta = inner.get("delta", {})
+                    if delta.get("type") == "thinking_delta":
+                        if delta.get("thinking"):   # 扩展思考：只做实时展示，不入库
+                            emit({"type": "thinking", "text": delta["thinking"]})
+                    elif delta.get("text"):
+                        emit({"type": "delta", "text": delta["text"]})
             elif kind == "user":
                 for block in ev.get("message", {}).get("content", []) or []:
                     if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error"):
@@ -284,6 +288,7 @@ class Run:
         self.owner_id = owner_id
         self.proc: subprocess.Popen | None = None
         self.text = ""
+        self.thinking = ""   # 当前这条消息的思考内容，只在实时快照里用，不写进 messages
         self.tools: list[dict] = []
         self.reply = ""
         self.ok = False
@@ -296,14 +301,24 @@ class Run:
 RUNS: dict[str, Run] = {}
 
 
+def live_snapshot(run: Run | None) -> dict | None:
+    """会话详情里的 live 快照（调用方要和 seq 在 events.lock 里一起取）。"""
+    return {"text": run.text, "thinking": run.thinking, "tools": list(run.tools)} if run else None
+
+
 def _on_event(run: Run, ev: dict) -> None:
-    if ev["type"] == "delta_reset":
-        run.text = ""
-    elif ev["type"] == "delta":
-        run.text += ev["text"]
-    elif ev["type"] == "tool":
-        run.tools.append({"name": ev["name"], "detail": ev["detail"]})
-    broadcast({**ev, "session_id": run.sid}, run.owner_id)
+    # 改 Run 状态和 broadcast 放在同一把锁里：会话快照（live + seq）也在这把锁里取，
+    # 所以快照里的 live 恰好包含 seq 及之前的所有增量，不多不少。
+    with events_lock:
+        if ev["type"] == "delta_reset":
+            run.text = run.thinking = ""
+        elif ev["type"] == "delta":
+            run.text += ev["text"]
+        elif ev["type"] == "thinking":
+            run.thinking += ev["text"]
+        elif ev["type"] == "tool":
+            run.tools.append({"name": ev["name"], "detail": ev["detail"]})
+        broadcast({**ev, "session_id": run.sid}, run.owner_id)
 
 
 def build_prompt(text: str, refs: list[str], skill: str) -> str:

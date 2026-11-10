@@ -4,14 +4,14 @@ import re
 import shutil
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 import files_api
 from runner import DEFAULT_ASK_CMDS, DEFAULT_BASH_ALLOW, RUNS, SAFE_BASH, dispatch_queue, max_concurrent, perm_mode
 from store import (AVATARS, DATA, PORT, VERSION, adopt_orphans, can_bypass, check_password, current_user, db, first_admin,
-                   get_setting, get_user, hash_password, is_local, issue_token, require_admin, set_setting, user_public,
-                   user_ws_dir)
+                   get_setting, get_user, hash_password, is_local, issue_token, require_admin, set_auth_cookie, set_setting,
+                   user_public, user_ws_dir, clear_auth_cookie, _token_from)
 
 router = APIRouter()
 
@@ -49,7 +49,7 @@ def setup_state(request: Request):
 
 
 @router.post("/api/setup")
-def setup_admin(body: Credentials, request: Request):
+def setup_admin(body: Credentials, request: Request, response: Response):
     """第一次运行：只能在台式机本机上创建第一个管理员。"""
     if first_admin():
         raise HTTPException(409, "已经有管理员了")
@@ -63,22 +63,37 @@ def setup_admin(body: Credentials, request: Request):
        (username, body.display_name.strip() or username, hash_password(body.password), "admin", time.time()))
     adopt_orphans()
     u = db("SELECT * FROM users WHERE username=?", (username,), one=True)
-    return {"token": issue_token(u["id"]), "user": me_view(u)}
+    token = issue_token(u["id"])
+    set_auth_cookie(response, token)
+    return {"token": token, "user": me_view(u)}
 
 
 @router.post("/api/login")
-async def login(body: Credentials):
+async def login(body: Credentials, response: Response):
     u = db("SELECT * FROM users WHERE username=?", (body.username.strip(),), one=True)
     if not u or u["disabled"] or u["role"] not in ("admin", "user") or not check_password(body.password, u["pw_hash"]):
         await asyncio.sleep(1)  # 放慢猜密码
         raise HTTPException(401, "用户名或密码不对")
-    return {"token": issue_token(u["id"]), "user": me_view(u)}
+    token = issue_token(u["id"])
+    set_auth_cookie(response, token)
+    return {"token": token, "user": me_view(u)}
 
 
 @router.post("/api/logout")
-def logout(request: Request, user: dict = Depends(current_user)):
-    token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+def logout(request: Request, response: Response, user: dict = Depends(current_user)):
+    token, _ = _token_from(request)   # 登出是 POST，只会拿到请求头里的令牌
     db("DELETE FROM tokens WHERE token=?", (token,))
+    clear_auth_cookie(response)
+    return {"ok": True}
+
+
+@router.post("/api/session-cookie")
+def session_cookie(request: Request, response: Response, user: dict = Depends(current_user)):
+    """升级前就已经登录的人：浏览器里有令牌（localStorage）但没有 cookie。页面启动时带着请求头调一次，补种 cookie，不用重新登录。"""
+    if user["role"] == "internal":
+        raise HTTPException(403, "只供内部使用")
+    token, _ = _token_from(request)
+    set_auth_cookie(response, token)
     return {"ok": True}
 
 
@@ -99,11 +114,13 @@ def update_me(body: MePatch, user: dict = Depends(current_user)):
 
 
 @router.post("/api/me/password")
-def change_password(body: ChangePassword, user: dict = Depends(current_user)):
+def change_password(body: ChangePassword, response: Response, user: dict = Depends(current_user)):
     if not check_password(body.old, user["pw_hash"]):
         raise HTTPException(400, "原密码不对")
     _check_new_password(body.new)
     db("UPDATE users SET pw_hash=? WHERE id=?", (hash_password(body.new), user["id"]))
+    db("DELETE FROM tokens WHERE user_id=?", (user["id"],))   # 和管理员重置密码一致：改了密码，所有设备都要重新登录
+    clear_auth_cookie(response)
     return {"ok": True}
 
 

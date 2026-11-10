@@ -4,15 +4,16 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 import files_api
 import sections
 import skills_api
 from approvals import approval_public, pending_for, questions_for
-from events import broadcast, push_session
-from runner import KB_ACTIONS, RUNS, submit_turn
+from events import lock as events_lock
+from events import broadcast, current_seq, push_session
+from runner import KB_ACTIONS, RUNS, live_snapshot, submit_turn
 from store import (CLAUDE_HOME, DATA, FILE_ROOT, avatar_of, can_bypass, current_user, db, get_user, require_admin,
                    session_for, session_workspace)
 
@@ -146,7 +147,8 @@ def admin_sessions(admin: dict = Depends(require_admin)):
 
 
 @router.get("/api/sessions")
-def list_sessions(section_id: int | None = None, user: dict = Depends(current_user)):
+def list_sessions(response: Response, section_id: int | None = None, user: dict = Depends(current_user)):
+    response.headers["X-Event-Seq"] = str(current_seq())   # 先于读库取：客户端据此忽略列表快照之前的 session 事件
     # 判断必须用 is None / == 0：0 是假值，“未分类”不能被当成“全部”
     if section_id is None:
         rows = db("SELECT * FROM sessions WHERE user_id=? ORDER BY updated DESC", (user["id"],))
@@ -166,17 +168,23 @@ def new_session(body: NewSession, user: dict = Depends(current_user)):
 @router.get("/api/sessions/{sid}")
 def read_session(sid: str, user: dict = Depends(current_user)):
     s = session_for(sid, user)
+    # 先取 seq 和内存里的实时状态（同一把锁，和 runner._on_event 互斥），再读数据库：
+    # 数据库里的消息可能比 seq 新（客户端按 id 去重），但不会比 seq 旧，所以不会漏事件。
+    with events_lock:
+        seq = current_seq()
+        live = live_snapshot(RUNS.get(sid))
+        approvals = [approval_public(a) for a in pending_for(sid)]
+        questions = [approval_public(q) for q in questions_for(sid)]
     msgs = db("SELECT * FROM messages WHERE session_id=? ORDER BY id", (sid,))
     for m in msgs:
         m["meta"] = json.loads(m["meta"])
-    run = RUNS.get(sid)
-    live = {"text": run.text, "tools": run.tools} if run else None
     return {
+        "seq": seq,
         "session": session_view(s),
         "messages": msgs,
         "live": live,
-        "approvals": [approval_public(a) for a in pending_for(sid)],
-        "questions": [approval_public(q) for q in questions_for(sid)],
+        "approvals": approvals,
+        "questions": questions,
     }
 
 
