@@ -373,7 +373,7 @@
     box().innerHTML = `<div class="card"><h4>${icon("plus", 16)}新建分区</h4>
       <div style="display:flex;gap:8px;margin-top:8px"><input class="field" id="nsName" placeholder="分区名，例如：合同" style="width:240px"><button class="btn primary" id="nsAdd">新建</button><button class="btn" id="nsSeed">一键建常用分区</button></div>
       <div class="muted" style="font-size:12.5px;margin-top:6px">分区是分类，不是权限；归档后同名分区需要先恢复。</div></div>
-      <table class="grid"><tr><th>分区</th><th>我的会话</th><th>笔记</th><th>状态</th><th></th></tr>
+      <table class="grid"><tr><th>分区</th><th>会话</th><th>笔记</th><th>状态</th><th></th></tr>
       ${list.map(s => `<tr data-sid="${s.id}"><td>${esc(s.name)}</td><td>${s.session_count ?? "—"}</td><td>${s.note_count ?? "—"}</td><td>${s.archived ? "已下架" : "使用中"}</td>
         <td style="white-space:nowrap;text-align:right">
           <button class="btn small ghost" data-sact="rename">改名</button>
