@@ -154,16 +154,27 @@ _db.executescript(
     CREATE UNIQUE INDEX IF NOT EXISTS uq_usage_turn_model ON usage_turns(message_id, model);
     CREATE INDEX IF NOT EXISTS idx_usage_user_time ON usage_turns(user_id, created);
     CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_turns(session_id);
+    CREATE TABLE IF NOT EXISTS sections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        color TEXT DEFAULT '',
+        sort INTEGER DEFAULT 0,
+        archived INTEGER DEFAULT 0,
+        created REAL);
+    CREATE INDEX IF NOT EXISTS idx_sections_active ON sections(archived, sort, id);
     """
 )
 for _table, _col in (("sessions", "bypass INTEGER DEFAULT 0"), ("sessions", "created_by TEXT DEFAULT ''"),
                      ("sessions", "user_id INTEGER"), ("sessions", "work_dir TEXT"), ("users", "avatar TEXT"),
                      ("library", "version INTEGER DEFAULT 1"), ("submissions", "changelog TEXT"),
-                     ("users", "ws_name TEXT"), ("sessions", "ws_dir TEXT")):
+                     ("users", "ws_name TEXT"), ("sessions", "ws_dir TEXT"),
+                     ("sessions", "section_id INTEGER"), ("users", "last_section_id INTEGER")):
     try:
         _db.execute(f"ALTER TABLE {_table} ADD COLUMN {_col}")
     except sqlite3.OperationalError:
         pass  # 列已存在
+_db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_section ON sessions(section_id)")
+_db.commit()
 
 
 def db(sql: str, args=(), one=False):

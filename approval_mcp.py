@@ -97,12 +97,14 @@ _STATE = {"changed": "⚠ 原文件在卡片写完后改过，内容可能过时
 
 
 @mcp.tool()
-async def kb_search(query: str, limit: int = 8) -> str:
+async def kb_search(query: str, limit: int = 8, type: str = "", section: str = "") -> str:
     """在团队知识库里搜索：经验（以前怎么做的）、文件卡片（重要文件的摘要和位置）、主题（项目、客户等）。
     query 用空格分开几个关键词，比如“退货 流程”“客户A 合同”。
-    遇到和公司业务、项目、客户、以前做过的事有关的问题，或要在文件库里找资料时，先用它查一下。"""
+    遇到和公司业务、项目、客户、以前做过的事有关的问题，或要在文件库里找资料时，先用它查一下。
+    type：只搜某一类（经验 / 文件卡片 / 主题），不确定时留空；
+    section：只搜某个分区（比如“合同”）；不确定时留空，留空搜全库。"""
     try:
-        d = await _post("/api/internal/kb/search", {"query": query, "limit": limit})
+        d = await _post("/api/internal/kb/search", {"query": query, "limit": limit, "type": type, "section": section})
     except Exception as e:
         return f"出错了：{e}"
     if not d["results"]:
@@ -141,16 +143,17 @@ async def kb_read(name: str) -> str:
 
 @mcp.tool()
 async def kb_write(title: str, content: str, type: str = "经验", tags: list[str] | None = None,
-                   summary: str = "", source: str = "", mode: str = "create") -> str:
+                   summary: str = "", source: str = "", mode: str = "create", section: str = "") -> str:
     """新建或修改知识库笔记（只有用户要求沉淀经验、整理文件进知识库、或明确让你记下来时才写）。
     title：标题，就是文件名和 [[链接]] 名，写成以后别人会搜的样子；
     content：Markdown 正文（不用写开头的 --- 属性，作者、日期会自动补上）；提到项目、客户、供应商、产品、人名时用 [[名字]] 链接；
     type：经验 / 文件卡片 / 主题；tags：几个标签；summary：一句话摘要；
     source：文件卡片对应的原文件或文件夹的完整路径（用来提醒原文件改过）；
     mode：create 新建（同名已存在会报错，防止重复）/ update 整体改写（先 kb_read，保留有用的旧内容）/ append 在末尾追加一段。
+    section：留空，不要自己填分区（分区由系统按当前会话自动补）。
     不要写进密码、身份证号、银行卡号。"""
     body = {"title": title, "content": content, "type": type, "mode": mode,
-            "tags": tags or None, "summary": summary or None, "source": source or None}
+            "tags": tags or None, "summary": summary or None, "source": source or None, "section": section}
     try:
         d = await _post("/api/internal/kb/write", body)
     except Exception as e:

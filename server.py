@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 import files_api
 import kb
+import sections
 import skills_api
 import usage
 from store import (_db, _db_lock, AVATARS, BASE, CLAUDE_HOME, DATA, DISCOVERY_PORT, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, WS_ROOT,
@@ -130,15 +131,71 @@ app.include_router(files_api.router)
 app.include_router(skills_api.router)
 app.include_router(kb.router)
 app.include_router(usage.router)
+app.include_router(sections.router)
+
+try:
+    kb.recover_section_rename()   # 上次分区改名中途崩溃的话，把没改完的笔记补上
+except Exception:
+    kb._log_section("启动时恢复分区改名失败")
 
 
 # ---------- 会话 ----------
 
-def session_view(s: dict) -> dict:
+def session_stats(sids: list[str]) -> dict[str, dict]:
+    """一次查询补齐一批会话的消息数、最后一轮结果、文件数（列表里不能逐会话查库）。"""
+    out = {sid: {"message_count": 0, "last": None, "file_count": 0} for sid in sids}
+    for i in range(0, len(sids), 500):
+        chunk = sids[i:i + 500]
+        ph = ",".join("?" * len(chunk))
+        for r in db(f"SELECT session_id, COUNT(*) AS c FROM messages WHERE session_id IN ({ph}) GROUP BY session_id", chunk):
+            out[r["session_id"]]["message_count"] = r["c"]
+        for r in db(f"SELECT m.session_id, m.role, m.meta FROM messages m WHERE m.session_id IN ({ph}) AND m.id IN "
+                    "(SELECT MAX(id) FROM messages WHERE role IN ('assistant','error') GROUP BY session_id)", chunk):
+            try:
+                meta = json.loads(r["meta"] or "{}")
+            except ValueError:
+                meta = {}
+            out[r["session_id"]]["last"] = {"role": r["role"], "meta": meta if isinstance(meta, dict) else {}}
+        for r in db(f"SELECT session_id, manifest FROM links WHERE session_id IN ({ph})", chunk):
+            try:
+                m = json.loads(r["manifest"] or "{}")
+            except ValueError:
+                m = {}
+            out[r["session_id"]]["file_count"] += len(m) if isinstance(m, (dict, list)) else 0
+    return out
+
+
+def session_view(s: dict, stats: dict | None = None) -> dict:
     owner = get_user(s.get("user_id")) or {}
-    return {**s, "running": s["id"] in RUNS, "pending": len(pending_for(s["id"])) + len(questions_for(s["id"])),
+    st = stats if stats is not None else session_stats([s["id"]])[s["id"]]
+    pending = len(pending_for(s["id"])) + len(questions_for(s["id"]))
+    running = s["id"] in RUNS
+    last = st["last"]
+    if pending:
+        status = "pending"
+    elif running:
+        status = "running"
+    elif not st["message_count"]:
+        status = "idle"   # 还没发过消息；前端据此显示“未开始”
+    elif last and (last["role"] == "error" or any(last["meta"].get(k) for k in ("stopped", "timed_out", "error"))):
+        status = "stopped"
+    else:
+        status = "done"
+    duration = (last["meta"].get("seconds") if last else None)
+    if duration is None and s.get("created") and s.get("updated"):
+        duration = max(0, round(s["updated"] - s["created"]))
+    return {**s, "running": running, "pending": pending,
             "owner": owner.get("display_name", ""), "owner_avatar": avatar_of(owner) if owner else "orange",
-            "work_dir": s.get("work_dir") or str(FILE_ROOT)}
+            "work_dir": s.get("work_dir") or str(FILE_ROOT),
+            "section_name": sections.section_name(s.get("section_id")),
+            "section_archived": bool((sections.get_section(s.get("section_id")) or {}).get("archived")),
+            "status": status, "duration_seconds": duration,
+            "message_count": st["message_count"], "file_count": st["file_count"]}
+
+
+def session_views(rows: list[dict]) -> list[dict]:
+    stats = session_stats([r["id"] for r in rows])
+    return [session_view(r, stats[r["id"]]) for r in rows]
 
 
 def push_session(sid: str) -> None:
@@ -147,12 +204,23 @@ def push_session(sid: str) -> None:
         broadcast({"type": "session", "session": session_view(s)}, s["user_id"])
 
 
-def create_session(title: str, owner: dict, work_dir: str | None = None) -> dict:
+def create_session(title: str, owner: dict, work_dir: str | None = None, section_id: int | None = None) -> dict:
+    """section_id：None=用上次新建记住的分区（已不存在或已归档则未分类）；0=未分类（同时清掉记住的分区）；
+    其他=必须存在且未归档，并记住。注意不能先把 0 收成 None，否则又回退到上次的分区。"""
+    if section_id is None:
+        last = (get_user(owner["id"]) or {}).get("last_section_id")
+        sec = last if sections.is_active(last) else None
+    elif section_id == 0:
+        sec = None
+        db("UPDATE users SET last_section_id=NULL WHERE id=?", (owner["id"],))
+    else:
+        sec = sections.require_active(section_id)["id"]
+        db("UPDATE users SET last_section_id=? WHERE id=?", (sec, owner["id"]))
     now = time.time()
     sid = uuid.uuid4().hex[:12]
-    db("INSERT INTO sessions (id, title, source, claude_session, created, updated, bypass, created_by, user_id, work_dir) "
-       "VALUES (?,?,?,?,?,?,0,?,?,?)",
-       (sid, title, "web", None, now, now, owner["display_name"], owner["id"], work_dir))
+    db("INSERT INTO sessions (id, title, source, claude_session, created, updated, bypass, created_by, user_id, work_dir, "
+       "section_id) VALUES (?,?,?,?,?,?,0,?,?,?,?)",
+       (sid, title, "web", None, now, now, owner["display_name"], owner["id"], work_dir, sec))
     push_session(sid)
     return db("SELECT * FROM sessions WHERE id=?", (sid,), one=True)
 
@@ -464,7 +532,13 @@ async def start_turn(sess: dict, text: str, author: dict, refs: list[str] | None
     try:
         add_message(sid, "user", text, meta)
         cmd = build_command(claude_bin, sess, owner, extra)
-        prompt = build_prompt(KB_ACTIONS[action][1] if action else text, refs, skill)
+        action_text = KB_ACTIONS[action][1] if action else text
+        if action:
+            sec = sections.active_name_for_session(db("SELECT section_id FROM sessions WHERE id=?", (sid,), one=True))
+            if sec:
+                action_text += (f"\n\n（这个会话属于“{sec}”分区。分区由系统按会话自动补到笔记上，"
+                                "kb_write 的 section 参数留空，不要自己填。）")
+        prompt = build_prompt(action_text, refs, skill)
     except Exception:
         RUNS.pop(sid, None)  # 任何一步失败都要清掉，否则会话一直显示“进行中”
         raise
@@ -785,7 +859,7 @@ def manifest():
 
 @app.get("/api/admin/sessions")
 def admin_sessions(admin: dict = Depends(require_admin)):
-    return [session_view(s) for s in db("SELECT * FROM sessions ORDER BY updated DESC")]
+    return session_views(db("SELECT * FROM sessions ORDER BY updated DESC"))
 
 
 # ---------- 会话接口 ----------
@@ -793,12 +867,14 @@ def admin_sessions(admin: dict = Depends(require_admin)):
 class NewSession(BaseModel):
     title: str = "新会话"
     work_dir: str | None = None
+    section_id: int | None = None   # 不传=用上次的分区；0=未分类
 
 
 class UpdateSession(BaseModel):
     title: str | None = None
     bypass: bool | None = None
     work_dir: str | None = None
+    section_id: int | None = None   # 不传（或 null）=不改；0=清空为未分类
 
 
 class Send(BaseModel):
@@ -839,14 +915,21 @@ app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 
 @app.get("/api/sessions")
-def list_sessions(user: dict = Depends(current_user)):
-    return [session_view(s) for s in db("SELECT * FROM sessions WHERE user_id=? ORDER BY updated DESC", (user["id"],))]
+def list_sessions(section_id: int | None = None, user: dict = Depends(current_user)):
+    # 判断必须用 is None / == 0：0 是假值，“未分类”不能被当成“全部”
+    if section_id is None:
+        rows = db("SELECT * FROM sessions WHERE user_id=? ORDER BY updated DESC", (user["id"],))
+    elif section_id == 0:
+        rows = db("SELECT * FROM sessions WHERE user_id=? AND section_id IS NULL ORDER BY updated DESC", (user["id"],))
+    else:
+        rows = db("SELECT * FROM sessions WHERE user_id=? AND section_id=? ORDER BY updated DESC", (user["id"], section_id))
+    return session_views(rows)
 
 
 @app.post("/api/sessions")
 def new_session(body: NewSession, user: dict = Depends(current_user)):
     work_dir = _check_work_dir(body.work_dir, user) if body.work_dir else None
-    return session_view(create_session(body.title.strip()[:40] or "新会话", user, work_dir))
+    return session_view(create_session(body.title.strip()[:40] or "新会话", user, work_dir, body.section_id))
 
 
 @app.get("/api/sessions/{sid}")
@@ -870,6 +953,14 @@ def read_session(sid: str, user: dict = Depends(current_user)):
 def update_session(sid: str, body: UpdateSession, user: dict = Depends(current_user)):
     s = session_for(sid, user)
     _owner_only(s, user)
+    new_section = False
+    if body.section_id is not None:   # 先校验，免得改了标题才发现分区不对
+        if body.section_id == 0:
+            new_section = None
+        elif body.section_id == s.get("section_id"):
+            new_section = False   # 没变（即使当前分区已归档）：放行，不动
+        else:
+            new_section = sections.require_active(body.section_id)["id"]
     if body.title is not None:
         db("UPDATE sessions SET title=? WHERE id=?", (body.title.strip()[:40] or "未命名", sid))
     if body.bypass is not None:
@@ -880,6 +971,8 @@ def update_session(sid: str, body: UpdateSession, user: dict = Depends(current_u
         if s["claude_session"]:
             raise HTTPException(409, "会话开始后不能换工作文件夹（Claude 的记忆跟着文件夹走），请新建一个会话")
         db("UPDATE sessions SET work_dir=? WHERE id=?", (_check_work_dir(body.work_dir, user), sid))
+    if new_section is not False:   # PATCH 不改 users.last_section_id
+        db("UPDATE sessions SET section_id=? WHERE id=?", (new_section, sid))
     push_session(sid)
     return session_view(session_for(sid, user))
 

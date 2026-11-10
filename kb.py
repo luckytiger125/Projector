@@ -25,8 +25,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import files_api
+import sections
 from skills_api import _session_owner
-from store import FILE_ROOT, KB_ROOT, current_user, db, get_user, is_admin, log_file_op, require_internal, safe_name
+from store import (DATA, FILE_ROOT, KB_ROOT, current_user, db, db_insert, get_setting, get_user, is_admin, log_file_op,
+                   require_internal, safe_name, set_setting)
 
 router = APIRouter()
 
@@ -35,7 +37,7 @@ STATUSES = ("有效", "过时")
 GUIDE_NAME = "知识库说明.md"
 HISTORY_KEEP = 60          # 每条笔记最多留多少个历史版本
 LIST_KEYS = {"tags", "aliases", "contributors"}
-ORDER = ["type", "summary", "tags", "aliases", "source", "source_mtime", "status",
+ORDER = ["type", "section", "summary", "tags", "aliases", "source", "source_mtime", "status",
          "author", "contributors", "created", "updated", "session"]
 CJK = re.compile(r"[\u3400-\u9fff]")
 LINK_RE = re.compile(r"(!?)\[\[([^\[\]\n|#^]+)(#[^\[\]\n|]*)?(?:\|([^\[\]\n]*))?\]\]")
@@ -254,7 +256,7 @@ def _parse(p: Path, rel: str, st) -> dict:
         "author": str(meta.get("author") or ""), "contributors": _as_list(meta.get("contributors")),
         "created": str(meta.get("created") or ""), "updated": str(meta.get("updated") or ""),
         "source": str(meta.get("source") or ""), "source_mtime": str(meta.get("source_mtime") or ""),
-        "session": str(meta.get("session") or ""), "aliases": _as_list(meta.get("aliases")),
+        "session": str(meta.get("session") or ""), "section": str(meta.get("section") or ""), "aliases": _as_list(meta.get("aliases")),
         "links": links, "mtime": st.st_mtime, "size": st.st_size,
         "body": body, "body_l": body.lower(), "meta": meta,
     }
@@ -343,7 +345,7 @@ def source_state(n: dict) -> str:
 
 def brief(n: dict) -> dict:
     return {k: n[k] for k in ("path", "title", "type", "tags", "summary", "status", "author", "created",
-                              "updated", "source", "mtime")} | {
+                              "updated", "source", "mtime", "section")} | {
         "source_state": source_state(n), "links": len(n["links"]), "backlinks": len(IDX.back.get(n["path"], ())),
         "words": len(n["body"])}
 
@@ -370,7 +372,16 @@ def _snippet(n: dict, terms: list[str], width: int = 70) -> str:
     return ("…" if start > 0 else "") + s + ("…" if start + width * 2 < len(text) else "")
 
 
-def search(q: str, limit: int = 20, ntype: str = "") -> list[dict]:
+def section_match(n: dict, section: str = "") -> bool:
+    """分区筛选规则（搜索、首页、图谱共用）：空=全库；__uncategorized__=只要没分区的；其他=只要这个分区的。"""
+    if not section:
+        return True
+    if section == sections.UNCATEGORIZED:
+        return not n["section"]
+    return n["section"] == section
+
+
+def search(q: str, limit: int = 20, ntype: str = "", section: str = "") -> list[dict]:
     idx = index()
     terms = _terms(q)
     if not terms:
@@ -378,6 +389,8 @@ def search(q: str, limit: int = 20, ntype: str = "") -> list[dict]:
     scored = []
     for n in idx.notes.values():
         if ntype and n["type"] != ntype:
+            continue
+        if not section_match(n, section):
             continue
         title, summ, body = n["title"].lower(), n["summary"].lower(), n["body_l"]
         tags = [t.lower() for t in n["tags"]]
@@ -458,10 +471,13 @@ class KBConflict(Exception):
 def write_note(*, user: dict, by_name: str, title: str = "", body: str = "", ntype: str | None = None,
                tags=None, summary: str | None = None, source: str | None = None, status: str | None = None,
                mode: str = "create", path: str | None = None, session: str = "", base_mtime: float | None = None,
-               note: str = "") -> dict:
+               note: str = "", section: str | None = None, fill_empty_section: str = "") -> dict:
+    """section：人显式改分区。None=保持原分区（新建则未分类）；""=清空；其他=校验未归档后写入。
+    fill_empty_section：Claude 用，只在新建或原分区为空时补上，已有分区保持不变。"""
     today = time.strftime("%Y-%m-%d")
     # Claude 有时会把属性也写进正文，拆出来合并
     extra_meta, body = split_fm(body or "")
+    extra_meta.pop("section", None)   # 正文里写的 section 不能绕过校验
     body = body.strip("\n")
     with _write_lock:
         idx = index(force=True)
@@ -487,6 +503,15 @@ def write_note(*, user: dict, by_name: str, title: str = "", body: str = "", nty
         for k, v in extra_meta.items():
             meta.setdefault(k, v)
         meta.pop("title", None)
+        old_section = str(old_meta.get("section") or "")
+        if section is not None:
+            section = section.strip()
+            if section:
+                meta["section"] = sections.require_active_name(section, current=old_section)
+            else:
+                meta.pop("section", None)
+        elif fill_empty_section and not old_section:
+            meta["section"] = fill_empty_section
         if ntype or not exists:
             meta["type"] = ntype or str(extra_meta.get("type") or "") or \
                 (rel.split("/")[0] if rel.split("/")[0] in TYPES else "笔记")
@@ -555,6 +580,118 @@ def rename_note(rel: str, new_title: str, user: dict) -> str:
         invalidate()
     log_file_op(user, "知识库改名", KB_ROOT / new_rel, f"{old_title} → {Path(new_file).stem}")
     return new_rel
+
+
+# ---------- 分区改名：同步改笔记属性，失败整体回滚 ----------
+
+RENAME_KEY = "section_rename_in_progress"
+
+
+def _atomic_write(p: Path, data: bytes) -> None:
+    tmp = p.with_name(p.name + ".saving")
+    tmp.write_bytes(data)
+    os.replace(tmp, p)
+
+
+def _log_section(msg: str) -> None:
+    try:
+        logs = DATA / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        with open(logs / "sections.log", "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
+
+def _retag(rel: str, new: str) -> tuple[bytes, bytes]:
+    """返回 (原文字节, 改过分区的新文字节)。解析 frontmatter 再重写，不对原文做字符串替换。"""
+    p = KB_ROOT / rel
+    raw = p.read_bytes()
+    meta, body = split_fm(read_text(p))
+    meta["section"] = new
+    return raw, (dump_fm(meta) + body).encode("utf-8")
+
+
+def _trim_history(paths) -> None:
+    for rel in paths:
+        for r in db("SELECT id FROM kb_history WHERE path=? ORDER BY id DESC LIMIT -1 OFFSET ?", (rel, HISTORY_KEEP)):
+            db("DELETE FROM kb_history WHERE id=?", (r["id"],))
+
+
+def rename_section(section_id: int, old: str, new: str, user: dict) -> None:
+    """改分区名：重名预检、sections.name、笔记文件在同一把 _write_lock 里完成。
+    历史记录等所有文件都写成功后才写；任何一步失败，文件、历史、分区名都回到改名前。"""
+    with _write_lock:
+        if err := sections.duplicate_error(new, section_id):
+            raise err
+        idx = index(force=True)
+        targets = sorted(rel for rel, n in idx.notes.items() if n["section"] == old)
+        set_setting(RENAME_KEY, {"section_id": section_id, "old": old, "new": new})
+        originals: dict[str, bytes] = {}
+        written: list[str] = []
+        hist_ids: list[int] = []
+        try:
+            db("UPDATE sections SET name=? WHERE id=?", (new, section_id))
+            contents = {}
+            for rel in targets:
+                originals[rel], contents[rel] = _retag(rel, new)
+            for rel in targets:
+                written.append(rel)          # 先记下再写：写到一半失败也要还原这一篇
+                _atomic_write(KB_ROOT / rel, contents[rel])
+            for rel in targets:
+                hist_ids.append(db_insert(
+                    "INSERT INTO kb_history (path, content, user_id, by_name, note, created) VALUES (?,?,?,?,?,?)",
+                    (rel, contents[rel].decode("utf-8"), user.get("id"), user.get("display_name", ""),
+                     f"分区改名：{old} → {new}", time.time())))
+            db("DELETE FROM settings WHERE key=?", (RENAME_KEY,))
+        except Exception as e:
+            failed = []
+            for rel in written:
+                try:
+                    _atomic_write(KB_ROOT / rel, originals[rel])
+                except Exception as e2:
+                    failed.append(rel)
+                    _log_section(f"分区改名回滚失败 {rel}: {e2!r}")
+            for hid in hist_ids:
+                db("DELETE FROM kb_history WHERE id=?", (hid,))
+            db("UPDATE sections SET name=? WHERE id=?", (old, section_id))
+            db("DELETE FROM settings WHERE key=?", (RENAME_KEY,))
+            _log_section(f"分区 {section_id} 改名 {old} → {new} 失败：{e!r}")
+            if failed:
+                raise RuntimeError(f"分区改名失败：{e}；有 {len(failed)} 篇笔记可能未回滚：" + "、".join(failed)) from e
+            raise
+        finally:
+            invalidate()
+        _trim_history(targets)
+    log_file_op(user, "分区改名", KB_ROOT, f"{old} → {new}（{len(targets)} 篇）")
+
+
+def recover_section_rename() -> None:
+    """启动时调用：上次改名中途崩溃（分区名已改、文件没写完）就把没改的笔记补成新名。"""
+    with _write_lock:
+        mark = get_setting(RENAME_KEY)
+        if not mark:
+            return
+        try:
+            row = sections.get_section(mark.get("section_id"))
+            if not row:
+                _log_section(f"分区改名恢复：分区 {mark} 已不存在，丢弃标记")
+            elif row["name"] == mark["new"]:
+                idx = index(force=True)
+                fixed = []
+                for rel in sorted(r for r, n in idx.notes.items() if n["section"] == mark["old"]):
+                    _, new_bytes = _retag(rel, mark["new"])
+                    _atomic_write(KB_ROOT / rel, new_bytes)
+                    db_insert("INSERT INTO kb_history (path, content, user_id, by_name, note, created) VALUES (?,?,?,?,?,?)",
+                              (rel, new_bytes.decode("utf-8"), None, "（系统）",
+                               f"分区改名恢复：{mark['old']} → {mark['new']}", time.time()))
+                    fixed.append(rel)
+                _trim_history(fixed)
+                _log_section(f"分区改名恢复：补写了 {len(fixed)} 篇 {mark['old']} → {mark['new']}")
+            # sections.name 还是 old：改名还没提交，什么都不用做
+        finally:
+            invalidate()
+        db("DELETE FROM settings WHERE key=?", (RENAME_KEY,))
 
 
 # ---------- 读 Word / Excel / PPT / PDF ----------
@@ -734,11 +871,14 @@ def _guard_note(rel: str) -> dict:
     return n
 
 
-def _recent(limit: int = 40) -> list[dict]:
+def _recent(limit: int = 40, paths: set | None = None) -> list[dict]:
+    """最近修改。paths 不为空时只看这些笔记（选了分区就只看分区内的），所以要多取一些再过滤。"""
     rows = db("SELECT h.id, h.path, h.by_name, h.note, h.created FROM kb_history h "
-              "WHERE h.user_id IS NOT NULL ORDER BY h.id DESC LIMIT ?", (limit * 3,))
+              "WHERE h.user_id IS NOT NULL ORDER BY h.id DESC LIMIT ?", (limit * 3 if paths is None else 3000,))
     out, seen = [], set()
     for r in rows:
+        if paths is not None and r["path"] not in paths:
+            continue
         k = (r["path"], r["by_name"], int(r["created"] // 600))   # 十分钟内同一人改同一篇算一次
         if k in seen:
             continue
@@ -749,28 +889,62 @@ def _recent(limit: int = 40) -> list[dict]:
     return out
 
 
+def _ghosts_of(raw_notes) -> dict[str, dict]:
+    """这批笔记里没有对应笔记的 [[链接]]（选了分区时只用过滤后的笔记算，不用全库的 IDX.ghosts）。"""
+    ghosts: dict[str, dict] = {}
+    for n in raw_notes:
+        for t in n["links"]:
+            if not resolve(t):
+                ghosts.setdefault(t.lower(), {"name": t, "from": set()})["from"].add(n["path"])
+    return ghosts
+
+
+def _today_new(raw_notes, limit: int = 30) -> list[dict]:
+    """今天新建的经验/文件卡片：每条笔记的第一条（带操作人的）历史记录发生在今天。不用 stats.week 冒充。"""
+    start = time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d"))
+    by_path = {n["path"]: n for n in raw_notes}
+    rows = db("SELECT h.path, h.by_name, h.created FROM kb_history h WHERE h.user_id IS NOT NULL AND h.created>=? "
+              "AND h.created<? AND h.note NOT LIKE '分区改名%' "
+              "AND h.id=(SELECT MIN(id) FROM kb_history WHERE path=h.path) ORDER BY h.created DESC",
+              (start, start + 86400))
+    out = []
+    for r in rows:
+        n = by_path.get(r["path"])
+        if n and n["type"] in ("经验", "文件卡片"):
+            out.append({"path": n["path"], "title": n["title"], "type": n["type"], "section": n["section"],
+                        "by_name": r["by_name"], "created": r["created"]})
+        if len(out) >= limit:
+            break
+    return out
+
+
 @router.get("/api/kb")
-def kb_home(user: dict = Depends(current_user)):
+def kb_home(section: str = "", user: dict = Depends(current_user)):
     idx = index()
+    # notes 始终返回全库：聊天里的 [[链接]]、kbFind、kbSuggest 要靠它解析，前端按 brief.section 自己过滤列表。
+    # 其余统计都只算选中分区内的笔记。
     notes = [brief(n) for n in idx.notes.values()]
     notes.sort(key=lambda n: -n["mtime"])
+    raw = [n for n in idx.notes.values() if section_match(n, section)]
+    fnotes = [n for n in notes if section_match(n, section)]
     tags: dict[str, int] = {}
-    for n in notes:
+    for n in fnotes:
         for t in n["tags"]:
             tags[t] = tags.get(t, 0) + 1
     week = time.time() - 7 * 86400
     by_type: dict[str, int] = {}
-    for n in notes:
+    for n in fnotes:
         by_type[n["type"]] = by_type.get(n["type"], 0) + 1
-    hubs = sorted(notes, key=lambda n: -n["backlinks"])[:8]
-    ghosts = sorted(({"name": g["name"], "count": len(g["from"])} for g in idx.ghosts.values()),
+    hubs = sorted(fnotes, key=lambda n: -n["backlinks"])[:8]
+    ghosts = sorted(({"name": g["name"], "count": len(g["from"])} for g in _ghosts_of(raw).values()),
                     key=lambda g: -g["count"])[:12]
     return {"root": str(KB_ROOT), "notes": notes, "types": list(TYPES),
             "tags": sorted(tags.items(), key=lambda x: (-x[1], x[0]))[:60],
-            "stats": {"total": len(notes), "by_type": by_type, "week": sum(1 for n in notes if n["mtime"] >= week),
-                      "stale": sum(1 for n in notes if n["source_state"]), "links": sum(n["links"] for n in notes)},
+            "stats": {"total": len(fnotes), "by_type": by_type, "week": sum(1 for n in fnotes if n["mtime"] >= week),
+                      "stale": sum(1 for n in fnotes if n["source_state"]), "links": sum(n["links"] for n in fnotes)},
             "hubs": [h for h in hubs if h["backlinks"]], "ghosts": [g for g in ghosts if g["count"] > 1],
-            "recent": _recent(20)}
+            "recent": _recent(20, {n["path"] for n in raw} if section else None),
+            "today_new": _today_new(raw), "section": section}
 
 
 @router.get("/api/kb/note")
@@ -797,24 +971,35 @@ def kb_note(path: str, user: dict = Depends(current_user)):
 
 
 @router.get("/api/kb/search")
-def kb_search_api(q: str, type: str = "", user: dict = Depends(current_user)):
-    return {"results": search(q, 40, type)}
+def kb_search_api(q: str, type: str = "", section: str = "", user: dict = Depends(current_user)):
+    return {"results": search(q, 40, type, section)}
 
 
 @router.get("/api/kb/graph")
-def kb_graph(user: dict = Depends(current_user)):
+def kb_graph(section: str = "", user: dict = Depends(current_user)):
     idx = index()
-    nodes = [{"id": n["path"], "title": n["title"], "type": n["type"], "status": n["status"],
-              "deg": len(n["links"]) + len(idx.back.get(n["path"], ()))} for n in idx.notes.values()]
+    raw = [n for n in idx.notes.values() if section_match(n, section)]
+    keep = {n["path"] for n in raw}
+    ghosts_src = idx.ghosts if not section else _ghosts_of(raw)
+    nodes = [{"id": n["path"], "title": n["title"], "type": n["type"], "status": n["status"], "section": n["section"],
+              "deg": len(n["links"]) + len(idx.back.get(n["path"], ()))} for n in raw]
     edges = set()
-    for n in idx.notes.values():
+    for n in raw:
         for t in n["links"]:
             target = resolve(t)
             if target and target != n["path"]:
-                edges.add(tuple(sorted((n["path"], target))))
+                if target in keep:     # 两端都在结果里才保留
+                    edges.add(tuple(sorted((n["path"], target))))
             elif not target:
                 edges.add((n["path"], "?" + t.lower()))
-    ghosts = [{"id": "?" + k, "title": g["name"], "type": "ghost", "deg": len(g["from"])} for k, g in idx.ghosts.items()]
+    ghosts = [{"id": "?" + k, "title": g["name"], "type": "ghost", "deg": len(g["from"])} for k, g in ghosts_src.items()]
+    if section:   # 选了分区：度数只算结果里的边，不带上被过滤掉的笔记
+        deg: dict[str, int] = {}
+        for a, b in edges:
+            deg[a] = deg.get(a, 0) + 1
+            deg[b] = deg.get(b, 0) + 1
+        for nd in nodes + ghosts:
+            nd["deg"] = deg.get(nd["id"], 0)
     return {"nodes": nodes + ghosts, "edges": [list(e) for e in edges]}
 
 
@@ -841,11 +1026,15 @@ class NoteBody(BaseModel):
     source: str | None = None
     status: str | None = None
     base_mtime: float | None = None
+    section: str | None = None   # None=保持原分区；""=清空为未分类；其他=校验未归档后写入
 
 
 @router.put("/api/kb/note")
 def kb_save(body: NoteBody, user: dict = Depends(current_user)):
     rel = body.path and _rel_of(body.path)
+    if body.section is not None and body.section.strip():   # 先校验，免得改了标题才发现分区不对
+        cur = index().notes.get(rel) if rel else None
+        sections.require_active_name(body.section, current=cur["section"] if cur else "")
     if rel and body.title and _title_file(body.title) != Path(rel).stem:
         rel = rename_note(rel, body.title, user)
     if body.type and body.type not in TYPES and body.type not in ("笔记", "说明"):
@@ -854,7 +1043,7 @@ def kb_save(body: NoteBody, user: dict = Depends(current_user)):
         r = write_note(user=user, by_name=user["display_name"], title=body.title, body=body.body,
                        ntype=body.type or None, tags=body.tags, summary=body.summary, source=body.source,
                        status=body.status, mode="update" if rel else "create", path=rel or None,
-                       base_mtime=body.base_mtime if rel else None)
+                       base_mtime=body.base_mtime if rel else None, section=body.section)
     except KBConflict as e:
         raise HTTPException(409, f"已经有一条叫“{Path(str(e)).stem}”的笔记了，换个标题，或者打开那条去改")
     return r
@@ -930,11 +1119,13 @@ class KBReq(BaseModel):
     mode: str = "create"
     path: str = ""
     offset: int = 0
+    section: str = ""   # 只给 internal_search 用；internal_write 不采用，分区以会话为准
 
 
 @router.post("/api/internal/kb/search")
 def internal_search(body: KBReq, _: dict = Depends(require_internal)):
-    return {"root": str(KB_ROOT), "results": search(body.query, max(1, min(body.limit, 20)))}
+    return {"root": str(KB_ROOT), "results": search(body.query, max(1, min(body.limit, 20)), body.type,
+                                                    body.section.strip())}
 
 
 @router.post("/api/internal/kb/read")
@@ -968,7 +1159,8 @@ def internal_write(body: KBReq, _: dict = Depends(require_internal)):
         return write_note(user=owner, by_name=owner["display_name"], title=body.title, body=body.content,
                           ntype=body.type or None, tags=body.tags, summary=body.summary, source=body.source,
                           status=body.status, mode=body.mode, path=body.path or None, session=sess["id"],
-                          note=f"Claude（{sess['title'][:20]}）")
+                          note=f"Claude（{sess['title'][:20]}）",
+                          section=None, fill_empty_section=sections.active_name_for_session(sess))
     except KBConflict as e:
         raise HTTPException(409, f"已经有同名笔记：{e}。先用 kb_read 看看内容，再用 mode=update（整体改写，保留有用的旧内容）或 append（在末尾追加）")
 
