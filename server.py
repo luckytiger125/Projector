@@ -25,7 +25,8 @@ from pydantic import BaseModel
 import files_api
 import kb
 import skills_api
-from store import (AVATARS, BASE, CLAUDE_HOME, DATA, DISCOVERY_PORT, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, WS_ROOT,
+import usage
+from store import (_db, _db_lock, AVATARS, BASE, CLAUDE_HOME, DATA, DISCOVERY_PORT, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, WS_ROOT,
                    user_ws_dir,
                    adopt_orphans, avatar_of, get_setting, set_setting, check_password, current_user, db, find_claude, first_admin,
                    get_user, hash_password, is_admin, is_local, issue_token, jdump, posix_rule_path,
@@ -128,6 +129,7 @@ app = FastAPI()
 app.include_router(files_api.router)
 app.include_router(skills_api.router)
 app.include_router(kb.router)
+app.include_router(usage.router)
 
 
 # ---------- 会话 ----------
@@ -157,10 +159,20 @@ def create_session(title: str, owner: dict, work_dir: str | None = None) -> dict
 
 def add_message(sid: str, role: str, content: str, meta: dict | None = None) -> dict:
     now = time.time()
-    db("INSERT INTO messages (session_id, role, content, meta, created) VALUES (?,?,?,?,?)",
-       (sid, role, content, jdump(meta or {}), now))
-    db("UPDATE sessions SET updated=? WHERE id=?", (now, sid))
-    msg = db("SELECT * FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,), one=True)
+    # INSERT、UPDATE、按 lastrowid 取回在同一把锁里完成，避免并发的 event 消息插队导致取错 id。
+    # 持锁期间不能再调用 db() / push_session() / session_view()（_db_lock 不可重入）。
+    with _db_lock:
+        try:
+            cur = _db.execute("INSERT INTO messages (session_id, role, content, meta, created) VALUES (?,?,?,?,?)",
+                              (sid, role, content, jdump(meta or {}), now))
+            mid = cur.lastrowid
+            _db.execute("UPDATE sessions SET updated=? WHERE id=?", (now, sid))
+            _db.commit()
+        except Exception:
+            _db.rollback()
+            raise
+        row = _db.execute("SELECT * FROM messages WHERE id=?", (mid,)).fetchone()
+        msg = dict(row)
     msg["meta"] = json.loads(msg["meta"])
     owner = (db("SELECT user_id FROM sessions WHERE id=?", (sid,), one=True) or {}).get("user_id")
     broadcast({"type": "message", "session_id": sid, "message": msg}, owner)
@@ -449,9 +461,13 @@ async def start_turn(sess: dict, text: str, author: dict, refs: list[str] | None
         meta["skill"] = skill
     if action:
         meta["kb"] = action
-    add_message(sid, "user", text, meta)
-    cmd = build_command(claude_bin, sess, owner, extra)
-    prompt = build_prompt(KB_ACTIONS[action][1] if action else text, refs, skill)
+    try:
+        add_message(sid, "user", text, meta)
+        cmd = build_command(claude_bin, sess, owner, extra)
+        prompt = build_prompt(KB_ACTIONS[action][1] if action else text, refs, skill)
+    except Exception:
+        RUNS.pop(sid, None)  # 任何一步失败都要清掉，否则会话一直显示“进行中”
+        raise
     asyncio.create_task(_drive(run, prompt, cmd, cwd))
     return run
 
@@ -468,33 +484,48 @@ async def _drive(run: Run, prompt: str, cmd: list[str], cwd: str) -> None:
     except Exception as e:
         final = {"is_error": True, "result": f"启动 claude 失败：{e}"}
     await asyncio.sleep(0)  # 让线程里排队的事件先处理完
-    if final.get("session_id"):
-        db("UPDATE sessions SET claude_session=? WHERE id=?", (final["session_id"], run.sid))
+    try:
+        if final.get("session_id"):
+            db("UPDATE sessions SET claude_session=? WHERE id=?", (final["session_id"], run.sid))
 
-    meta = {"tools": run.tools, "seconds": round(time.time() - started), "cost": final.get("total_cost_usd")}
-    if run.stopped:
-        run.reply = "已停止。"
-        add_message(run.sid, "error", run.reply + (f"\n\n{run.text}" if run.text else ""), meta)
-    elif run.timed_out:
-        run.reply = f"超过 {int(TASK_TIMEOUT // 60)} 分钟没完成，已停止。"
-        add_message(run.sid, "error", run.reply, meta)
-    elif final.get("is_error"):
-        run.reply = f"出错了：{final.get('result') or final.get('subtype')}"
-        add_message(run.sid, "error", run.reply, meta)
-    else:
-        run.ok = True
-        run.reply = final.get("result") or run.text
-        add_message(run.sid, "assistant", run.reply, meta)
+        meta = {"tools": run.tools, "seconds": round(time.time() - started), "cost": final.get("total_cost_usd")}
+        msg = None
+        if run.stopped:
+            run.reply = "已停止。"
+            msg = add_message(run.sid, "error", run.reply + (f"\n\n{run.text}" if run.text else ""),
+                              {**meta, "stopped": True})
+        elif run.timed_out:
+            run.reply = f"超过 {int(TASK_TIMEOUT // 60)} 分钟没完成，已停止。"
+            msg = add_message(run.sid, "error", run.reply, {**meta, "timed_out": True})
+        elif final.get("is_error"):
+            run.reply = f"出错了：{final.get('result') or final.get('subtype')}"
+            msg = add_message(run.sid, "error", run.reply, {**meta, "error": True})
+        else:
+            run.ok = True
+            run.reply = final.get("result") or run.text
+            msg = add_message(run.sid, "assistant", run.reply, meta)
 
-    if "warn_perm" in run.warnings:
-        add_message(run.sid, "event", "⚠ 这一轮里权限确认通道出了故障，需要确认的操作没有执行。重发一次通常就好；"
-                                      f"反复出现请把 data/logs/claude_{run.sid}.log 发给管理员。")
-    for a in pending_for(run.sid) + questions_for(run.sid):
-        if not a["future"].done():
-            a["future"].set_result((False, "任务已结束"))
-    del RUNS[run.sid]
-    run.done.set()
-    push_session(run.sid)
+        try:
+            if msg:
+                usage.record_turn(run.sid, run.owner_id, msg["id"], final)
+        except Exception:  # record_turn 自己也会兜底，这里再保一层
+            usage.log_failure(run.sid, "record_turn")
+
+        if "warn_perm" in run.warnings:  # 独立调用，不要覆盖 msg
+            add_message(run.sid, "event", "⚠ 这一轮里权限确认通道出了故障，需要确认的操作没有执行。重发一次通常就好；"
+                                          f"反复出现请把 data/logs/claude_{run.sid}.log 发给管理员。")
+    except Exception:
+        usage.log_failure(run.sid, "drive")
+    finally:
+        # 无论上面哪一步失败，都必须清掉 RUNS，否则会话会一直显示“进行中”
+        try:
+            for a in pending_for(run.sid) + questions_for(run.sid):
+                if not a["future"].done():
+                    a["future"].set_result((False, "任务已结束"))
+        finally:
+            RUNS.pop(run.sid, None)
+            run.done.set()
+            push_session(run.sid)
 
 
 # ---------- 登录和账号 ----------

@@ -16,7 +16,8 @@ from pathlib import Path
 from fastapi import Depends, HTTPException, Request
 
 BASE = Path(__file__).resolve().parent
-DATA = BASE / "data"
+# 测试时用环境变量 PROJECTOR_DATA 把数据目录指到临时位置，不碰真实的 data/
+DATA = Path(os.environ["PROJECTOR_DATA"]).resolve() if os.environ.get("PROJECTOR_DATA") else BASE / "data"
 for _d in ("mcp", "workspaces", "skills/library", "skills/submissions", "skills/versions", "plugins", "preview"):
     (DATA / _d).mkdir(parents=True, exist_ok=True)
 
@@ -137,6 +138,22 @@ _db.executescript(
         deleted_by INTEGER, deleted_at REAL, reason TEXT);
     CREATE TABLE IF NOT EXISTS file_ops (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT, path TEXT, detail TEXT, created REAL);
+    CREATE TABLE IF NOT EXISTS usage_turns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        user_id INTEGER,
+        message_id INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        cache_read_tokens INTEGER,
+        cache_write_tokens INTEGER,
+        cost_usd REAL,
+        created REAL,
+        source TEXT DEFAULT 'result');
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_usage_turn_model ON usage_turns(message_id, model);
+    CREATE INDEX IF NOT EXISTS idx_usage_user_time ON usage_turns(user_id, created);
+    CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_turns(session_id);
     """
 )
 for _table, _col in (("sessions", "bypass INTEGER DEFAULT 0"), ("sessions", "created_by TEXT DEFAULT ''"),
@@ -155,6 +172,31 @@ def db(sql: str, args=(), one=False):
         _db.commit()
         rows = [dict(r) for r in cur.fetchall()]
     return (rows[0] if rows else None) if one else rows
+
+
+def db_insert(sql: str, args=()) -> int:
+    """执行一条 INSERT，在同一把锁里取回 lastrowid，避免并发写入时取到别人的 id。"""
+    with _db_lock:
+        try:
+            cur = _db.execute(sql, args)
+            _db.commit()
+        except Exception:
+            _db.rollback()
+            raise
+        return cur.lastrowid
+
+
+def db_many(sql: str, rows) -> int:
+    """一次锁、一次提交写完多行；任何一行失败整批回滚。返回实际写入的行数（ON CONFLICT 跳过的不算）。"""
+    with _db_lock:
+        before = _db.total_changes
+        try:
+            _db.executemany(sql, rows)
+            _db.commit()
+        except Exception:
+            _db.rollback()
+            raise
+        return _db.total_changes - before
 
 
 def get_setting(key: str, default=None):
