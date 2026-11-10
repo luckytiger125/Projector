@@ -686,15 +686,54 @@ function welcomeHtml() {
   </div>`;
 }
 
+// 左侧的时间和署名；完整渲染和实时节点共用
+const sideOf = (t, who) => `<div class="side"><span class="tm">${t ? hm(t) : ""}</span><span class="who">${esc(who)}</span></div>`;
+const isWaiting = () => approvals.length > 0 || questions.length > 0;
+// 正在输出的那一条：完整渲染和流式增量更新都从这几个函数出模板，避免两边写法漂移
+function liveStepsHtml(waiting) { return live ? stepsLive(live.tools, waiting) : ""; }
+function liveMdHtml(waiting) { return `<div class="md ${waiting ? "" : "typing"}">${md(live.text)}</div>`; }
+function liveEntryHtml(waiting) {
+  return `<div class="entry" data-live>${sideOf(null, waiting ? "待确认" : "进行中")}<div class="body">${liveStepsHtml(waiting)}${liveMdHtml(waiting)}</div></div>`;
+}
+
+// 流式期间只更新正在输出的那一条，历史消息的 DOM 不动；同一帧内的多次事件合并成一次
+let liveRaf = 0;
+function scheduleLive() {
+  if (liveRaf) return;
+  liveRaf = requestAnimationFrame(() => { liveRaf = 0; renderLive(); });
+}
+function renderLive() {
+  const node = live && $("list").querySelector(":scope > .entry[data-live]");
+  if (!node) return renderMessages();  // 还没有实时节点：走完整渲染
+  const waiting = isWaiting();
+  const box = $("messages");
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+  const body = node.querySelector(".body");
+  node.querySelector(".side .who").textContent = waiting ? "待确认" : "进行中";
+  const key = live.tools.length + ":" + waiting;
+  if (node.dataset.steps !== key) {  // 步骤没变就不碰，免得重放入场动画
+    node.dataset.steps = key;
+    const old = body.querySelector(":scope > ol.tl");
+    const html = liveStepsHtml(waiting);
+    if (old) old.remove();
+    if (html) body.insertAdjacentHTML("afterbegin", html);
+  }
+  const mdEl = body.querySelector(":scope > .md");
+  mdEl.classList.toggle("typing", !waiting);
+  mdEl.innerHTML = md(live.text);
+  linkifyPaths(mdEl);
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
 function renderMessages(force = false) {
   if (!me) return;
+  if (liveRaf) { cancelAnimationFrame(liveRaf); liveRaf = 0; }  // 完整渲染会带上最新状态
   renderTop();
   if (!messages.length && !live && !approvals.length) {
     $("list").innerHTML = `<div class="entry-empty">还没有记录。写下要交给 Claude 的事，发送后从这里开始。</div>`;
     return;
   }
   const whoOf = (meta, fallback) => (meta && meta.author) || fallback;
-  const sideOf = (t, who) => `<div class="side"><span class="tm">${t ? hm(t) : ""}</span><span class="who">${esc(who)}</span></div>`;
   const lastAi = isMine() && !live && !(currentSess && currentSess.running) && currentSess && currentSess.claude_session
     ? messages.map(m => m.role).lastIndexOf("assistant") : -1;
   let html = messages.map((m, mi) => {
@@ -719,8 +758,7 @@ function renderMessages(force = false) {
     return `<div class="entry">${sideOf(m.created, "Claude")}<div class="body">${stepsDone(meta.tools)}${body}${info ? `<div class="meta">${info}</div>` : ""}${acts}</div></div>`;
   }).join("");
   if (live) {
-    const waiting = approvals.length > 0 || questions.length > 0;
-    html += `<div class="entry">${sideOf(null, waiting ? "待确认" : "进行中")}<div class="body">${stepsLive(live.tools, waiting)}<div class="md ${waiting ? "" : "typing"}">${md(live.text)}</div></div></div>`;
+    html += liveEntryHtml(isWaiting());
   }
   html += approvals.map(a => `
     <div class="slip ticket">
@@ -735,6 +773,8 @@ function renderMessages(force = false) {
   const box = $("messages");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
   $("list").innerHTML = html;
+  const liveNode = $("list").querySelector(":scope > .entry[data-live]");
+  if (liveNode) liveNode.dataset.steps = live.tools.length + ":" + isWaiting();
   messages.forEach(m => seen.add(m.id));
   if (live) seen.add("live");
   linkifyPaths($("list"));
@@ -881,9 +921,9 @@ function connect() {
       else if (ev.message.role !== "event") { live = null; liveSteps = 0; }
     } else if (ev.type === "approval") { approvals.push(ev.approval); }
     else if (ev.type === "approval_done") { approvals = approvals.filter(a => a.id !== ev.id); }
-    else if (ev.type === "delta_reset") { live = { text: "", tools: live ? live.tools : [] }; }
-    else if (ev.type === "delta") { live = live || { text: "", tools: [] }; live.text += ev.text; }
-    else if (ev.type === "tool") { live = live || { text: "", tools: [] }; live.tools.push({ name: ev.name, detail: ev.detail }); }
+    else if (ev.type === "delta_reset") { live = { text: "", tools: live ? live.tools : [] }; return scheduleLive(); }
+    else if (ev.type === "delta") { live = live || { text: "", tools: [] }; live.text += ev.text; return scheduleLive(); }
+    else if (ev.type === "tool") { live = live || { text: "", tools: [] }; live.tools.push({ name: ev.name, detail: ev.detail }); return scheduleLive(); }
     renderMessages();
   };
 }
