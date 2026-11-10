@@ -1,0 +1,71 @@
+name: 服务端测试
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.py"
+      - "tests/**"
+      - "requirements*.txt"
+      - "static/*.js"
+      - ".github/workflows/server-tests.yml"
+  pull_request:
+    paths:
+      - "**/*.py"
+      - "tests/**"
+      - "requirements*.txt"
+      - "static/*.js"
+      - ".github/workflows/server-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一分支/PR 上有新提交时，取消还在跑的旧任务
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Windows 默认编码不是 UTF-8，不设的话中文读写会出错
+  PYTHONUTF8: "1"
+
+jobs:
+  pytest:
+    name: pytest（${{ matrix.os }} / Python ${{ matrix.python }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows 是实际部署环境，最重要
+        os: [windows-latest, ubuntu-latest]
+        # README 写的最低版本 3.10，以及当前版本 3.13
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      # 测试通过 tests/conftest.py 里的环境变量自我隔离，不需要密钥或外部服务
+      - run: python -m pytest -q
+
+  js-syntax:
+    name: 前端 JS 语法检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: node --check
+        run: |
+          for f in static/app.js static/admin.js static/kb.js static/ui.js; do
+            echo "检查 $f"
+            node --check "$f"
+          done
