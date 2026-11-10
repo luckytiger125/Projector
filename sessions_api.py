@@ -165,8 +165,33 @@ def new_session(body: NewSession, user: dict = Depends(current_user)):
     return session_view(create_session(body.title.strip()[:40] or "新会话", user, work_dir, body.section_id))
 
 
+PAGE_DEFAULT = 100
+PAGE_MAX = 500
+
+
+def _message_page(sid: str, before: int | None, limit: int) -> tuple[list[dict], bool]:
+    """最新的一页消息（按 id 升序）。多取一条判断是否还有更早的；before 不为空时只取 id < before 的。"""
+    limit = max(1, min(PAGE_MAX, limit))
+    if before is None:
+        rows = db("SELECT * FROM messages WHERE session_id=? ORDER BY id DESC LIMIT ?", (sid, limit + 1))
+    else:
+        rows = db("SELECT * FROM messages WHERE session_id=? AND id<? ORDER BY id DESC LIMIT ?", (sid, before, limit + 1))
+    has_more = len(rows) > limit
+    rows = rows[:limit][::-1]
+    for m in rows:
+        m["meta"] = json.loads(m["meta"])
+    return rows, has_more
+
+
+@router.get("/api/sessions/{sid}/messages")
+def older_messages(sid: str, before: int, limit: int = PAGE_DEFAULT, user: dict = Depends(current_user)):
+    session_for(sid, user)
+    msgs, has_more = _message_page(sid, before, limit)
+    return {"messages": msgs, "has_more": has_more}
+
+
 @router.get("/api/sessions/{sid}")
-def read_session(sid: str, user: dict = Depends(current_user)):
+def read_session(sid: str, limit: int = PAGE_DEFAULT, user: dict = Depends(current_user)):
     s = session_for(sid, user)
     # 先取 seq 和内存里的实时状态（同一把锁，和 runner._on_event 互斥），再读数据库：
     # 数据库里的消息可能比 seq 新（客户端按 id 去重），但不会比 seq 旧，所以不会漏事件。
@@ -175,13 +200,12 @@ def read_session(sid: str, user: dict = Depends(current_user)):
         live = live_snapshot(RUNS.get(sid))
         approvals = [approval_public(a) for a in pending_for(sid)]
         questions = [approval_public(q) for q in questions_for(sid)]
-    msgs = db("SELECT * FROM messages WHERE session_id=? ORDER BY id", (sid,))
-    for m in msgs:
-        m["meta"] = json.loads(m["meta"])
+    msgs, has_more = _message_page(sid, None, limit)
     return {
         "seq": seq,
         "session": session_view(s),
         "messages": msgs,
+        "has_more": has_more,
         "live": live,
         "approvals": approvals,
         "questions": questions,

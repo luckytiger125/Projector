@@ -19,6 +19,9 @@ let sections = [];           // 分区列表（后端 /api/sections）
 let currentSection = null;   // null=全部，0=未分类，其他=section_id
 let currentSess = null;      // 当前会话对象（可能是别人的，管理员查看时）
 let messages = [];
+let hasMore = false;        // 服务器上是否还有更早的消息（messages 只是最近一页起的一段）
+let olderState = "";        // ""=空闲  "loading"=正在取  "failed"=上次失败（留着按钮重试）
+let keepScroll = false;     // 为 true 时 renderMessages 不自动滚到底（加载更早的消息时）
 let live = null;             // 正在进行的回复 {text, thinking, tools}
 let thinkOpen = false;       // “思考中”块是否被用户展开（完整重渲染后要保持）
 let snapSeq = 0;             // 当前会话详情快照的事件序号：seq 不大于它的会话事件已经包含在快照里，要忽略
@@ -209,7 +212,7 @@ function paintMe() {
 function enter(user) {
   me = user;
   paintMe();
-  sessions = []; current = null; currentSess = null; messages = []; live = null; approvals = []; links = [];
+  sessions = []; current = null; currentSess = null; messages = []; hasMore = false; olderState = ""; live = null; approvals = []; links = [];
   sections = []; currentSection = null;
   seen.clear();
   resetComposer();
@@ -764,7 +767,7 @@ function renderMessages(force = false) {
   const whoOf = (meta, fallback) => (meta && meta.author) || fallback;
   const lastAi = isMine() && !live && !(currentSess && currentSess.running) && currentSess && currentSess.claude_session
     ? messages.map(m => m.role).lastIndexOf("assistant") : -1;
-  let html = messages.map((m, mi) => {
+  let html = olderHtml() + messages.map((m, mi) => {
     const meta = m.meta || {};
     if (m.role === "user") {
       return `<div class="entry me">${sideOf(m.created, whoOf(meta, "交办"))}<div class="body">${chipsHtml(meta)}${esc(m.content)}</div></div>`;
@@ -808,8 +811,50 @@ function renderMessages(force = false) {
   messages.forEach(m => seen.add(m.id));
   if (live) seen.add("live");
   linkifyPaths($("list"));
-  if (atBottom || approvals.length) box.scrollTop = box.scrollHeight;
+  if (!keepScroll && (atBottom || approvals.length)) box.scrollTop = box.scrollHeight;
 }
+
+// ---------- 分页：只载入最近一页，更早的按需取 ----------
+function olderHtml() {
+  if (!hasMore) return "";
+  const loading = olderState === "loading";
+  const label = loading ? "加载中…" : olderState === "failed" ? "加载失败，点此重试" : "加载更早的消息";
+  return `<div class="older-wrap"><button class="btn ghost small" id="olderBtn" data-older${loading ? " disabled" : ""}>${label}</button></div>`;
+}
+function paintOlder() {
+  const b = $("olderBtn");
+  if (!b) return;
+  b.disabled = olderState === "loading";
+  b.textContent = olderState === "loading" ? "加载中…" : olderState === "failed" ? "加载失败，点此重试" : "加载更早的消息";
+}
+async function loadOlder() {
+  if (!current || !hasMore || olderState === "loading" || !messages.length) return;  // 防并发/重复
+  const sid = current, before = messages[0].id;
+  olderState = "loading"; paintOlder();
+  try {
+    const data = await api(`/api/sessions/${sid}/messages?before=${before}&limit=100`);
+    // 期间切了会话或整体重载过：这一页已经没用了
+    if (current !== sid || !messages.length || messages[0].id !== before) return;
+    const have = new Set(messages.map(m => m.id));
+    const box = $("messages");
+    const oldH = box.scrollHeight, oldTop = box.scrollTop;
+    messages = data.messages.filter(m => !have.has(m.id)).concat(messages);
+    hasMore = !!data.has_more; olderState = "";
+    keepScroll = true;
+    try { renderMessages(); } finally { keepScroll = false; }
+    // 锚定：新内容都加在上方，把滚动位置补上增加的高度，读者正在看的那条不动
+    box.style.scrollBehavior = "auto";
+    box.scrollTop = oldTop + (box.scrollHeight - oldH);
+    box.style.scrollBehavior = "";
+  } catch (e) {
+    if (current !== sid) return;
+    olderState = "failed"; paintOlder();
+  }
+}
+$("messages").addEventListener("scroll", () => {
+  if (hasMore && olderState === "" && $("messages").scrollTop < 40) loadOlder();   // 失败后不自动重试，免得刷屏，点按钮重试
+});
+
 
 function approvalDetail(a) {
   const i = a.input || {};
@@ -823,6 +868,7 @@ function approvalDetail(a) {
 $("list").addEventListener("toggle", e => { if (e.target.matches && e.target.matches("details[data-think]")) thinkOpen = e.target.open; }, true);
 
 $("list").addEventListener("click", e => {
+  if (e.target.closest("[data-older]")) { olderState = ""; return loadOlder(); }
   if (e.target.closest("[data-distill]")) { e.target.closest("[data-distill]").disabled = true; return window.kbDistill(); }
   const card = e.target.closest(".w-card");
   if (card) {
@@ -879,7 +925,7 @@ async function openSession(id) {
   closeDrawer();
   seen.clear(); liveSteps = 0;
   if (!id) {
-    currentSess = null; messages = []; live = null; approvals = []; links = []; questions = [];
+    currentSess = null; messages = []; hasMore = false; olderState = ""; live = null; approvals = []; links = []; questions = [];
     setView("chat");
     renderSessions(); renderMessages(true); renderAsk(); $("input").focus(); return;
   }
@@ -888,7 +934,7 @@ async function openSession(id) {
   if (current !== id) return;
   snapSeq = data.seq || 0;
   thinkOpen = false;
-  currentSess = data.session; messages = data.messages; live = data.live; approvals = data.approvals; questions = data.questions || [];
+  currentSess = data.session; messages = data.messages; hasMore = !!data.has_more; olderState = ""; live = data.live; approvals = data.approvals; questions = data.questions || [];
   links = await api(`/api/sessions/${id}/links`).catch(() => []);
   renderSessions(); renderMessages(true); renderAsk();
   $("messages").style.scrollBehavior = "auto";
@@ -897,7 +943,7 @@ async function openSession(id) {
 }
 
 function showHome() {
-  current = null; currentSess = null; messages = []; live = null; approvals = []; links = []; questions = [];
+  current = null; currentSess = null; messages = []; hasMore = false; olderState = ""; live = null; approvals = []; links = []; questions = [];
   seen.clear(); liveSteps = 0;
   setView("home");
   closeDrawer();
@@ -994,7 +1040,7 @@ function connect(manual = false) {
 async function ensureSession(title) {
   if (current) return current;
   const s = await post("/api/sessions", { title: (title || "新会话").slice(0, 20), work_dir: composer.workDir || null, section_id: currentSection });
-  current = s.id; currentSess = s; messages = []; approvals = []; links = [];
+  current = s.id; currentSess = s; messages = []; hasMore = false; olderState = ""; approvals = []; links = [];
   composer.workDir = "";
   upsertSession(s);
   return s.id;
