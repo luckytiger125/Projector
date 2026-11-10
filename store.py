@@ -281,6 +281,20 @@ def adopt_orphans() -> None:
 adopt_orphans()
 
 
+def migrate_legacy() -> None:
+    """ESP32 / 语音模块已移除，升级时处理老数据（可重复执行，不删任何数据）：
+    - role='device' 的“板子”账号设为停用并清掉令牌（登录和令牌校验本来就拒绝停用账号）；
+    - source='voice' 的历史语音会话保留为只读记录，归到第一个管理员名下；还没有管理员就先不动，下次启动再处理。"""
+    db("UPDATE users SET disabled=1 WHERE role='device' AND disabled=0")
+    db("DELETE FROM tokens WHERE user_id IN (SELECT id FROM users WHERE role='device')")
+    if admin := first_admin():
+        db("UPDATE sessions SET user_id=? WHERE source='voice' AND (user_id IS NULL OR user_id NOT IN "
+           "(SELECT id FROM users WHERE role='admin'))", (admin["id"],))
+
+
+migrate_legacy()
+
+
 def _load_internal_token() -> str:
     """给 approval_mcp.py 用的内部令牌，不给人用。"""
     path = DATA / "internal_token.txt"

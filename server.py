@@ -33,7 +33,7 @@ from store import (_db, _db_lock, AVATARS, BASE, CLAUDE_HOME, DATA, DISCOVERY_PO
                    get_user, hash_password, is_admin, is_local, issue_token, jdump, posix_rule_path,
                    require_admin, require_internal, session_for, session_workspace, user_public)
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 LOGS = DATA / "logs"
 LOGS.mkdir(exist_ok=True)
 TASK_TIMEOUT = float(os.environ.get("CLAUDE_TASK_TIMEOUT", "3600"))
@@ -1000,6 +1000,8 @@ def delete_session(sid: str, user: dict = Depends(current_user)):
 async def send_message(sid: str, body: Send, user: dict = Depends(current_user)):
     s = session_for(sid, user)
     _owner_only(s, user)
+    if s.get("source") == "voice":
+        raise HTTPException(400, "这是语音功能留下的历史记录，只能查看，不能继续对话；请新建会话")
     text = body.text.strip()
     refs = [str(files_api.resolve_path(r, user)) for r in body.refs[:30]]
     if body.action:
