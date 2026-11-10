@@ -5,7 +5,9 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+import approvals
 import kb
+import runner
 import sections
 import server
 import store
@@ -24,8 +26,8 @@ def clean_kb():
         store.db("DELETE FROM kb_history")
         store.db("DELETE FROM settings WHERE key=?", (kb.RENAME_KEY,))
         store.db("DELETE FROM links")
-        server.RUNS.clear()
-        server.APPROVALS.clear()
+        runner.RUNS.clear()
+        approvals.APPROVALS.clear()
         kb.invalidate()
     wipe()
     yield
@@ -270,9 +272,9 @@ def test_session_status_derivation(alice):
         assert _status(alice, sid)["status"] == "stopped", flag
     _msg(sid, "assistant", {"seconds": 1})
     assert _status(alice, sid)["status"] == "done"          # 最后一轮成功了
-    server.RUNS[sid] = server.Run(sid, alice["id"])
+    runner.RUNS[sid] = runner.Run(sid, alice["id"])
     assert _status(alice, sid)["status"] == "running"
-    server.APPROVALS["a1"] = {"session_id": sid}
+    approvals.APPROVALS["a1"] = {"session_id": sid}
     assert _status(alice, sid)["status"] == "pending"       # pending 优先于 running
     # 列表接口给出同样的状态
     assert [s["status"] for s in client.get("/api/sessions", headers=alice["headers"]).json()] == ["pending"]

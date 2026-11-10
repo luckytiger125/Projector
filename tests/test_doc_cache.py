@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 import files_api
 import kb
+import runner
 import server
 import store
 
@@ -355,8 +356,8 @@ def test_read_document_hints_by_status(make_user, monkeypatch):
 def test_deny_rules_blocks_doc_cache(make_user):
     u = make_user("bob")
     row = store.db("SELECT * FROM users WHERE id=?", (u["id"],), one=True)
-    rules = server._deny_rules(row)
-    pat = server.posix_rule_path(kb.DOC_CACHE_DIR) + "/**"
+    rules = runner._deny_rules(row)
+    pat = store.posix_rule_path(kb.DOC_CACHE_DIR) + "/**"
     for tool in ("Read", "Edit", "Write"):
         assert f"{tool}({pat})" in rules
     assert kb.DOC_CACHE_DIR.parent == store.DATA   # 缓存目录跟着 PROJECTOR_DATA 走

@@ -6,6 +6,8 @@ from datetime import date, datetime
 import pytest
 from fastapi.testclient import TestClient
 
+import events
+import runner
 import store
 import usage
 
@@ -119,9 +121,9 @@ def test_recent_turns_groups_by_message(make_user):
 def test_recent_turns_preview_skips_events(make_user):
     u = make_user("a")
     _session(uid=u["id"])
-    server.add_message("s1", "user", "请汇总九月合同")
-    server.add_message("s1", "event", "已同意")
-    m = server.add_message("s1", "assistant", "好的")
+    events.add_message("s1", "user", "请汇总九月合同")
+    events.add_message("s1", "event", "已同意")
+    m = events.add_message("s1", "assistant", "好的")
     _row(u["id"], m["id"], i=1)
     assert usage.recent_turns(u["id"])[0]["preview"] == "请汇总九月合同"
 
@@ -234,7 +236,7 @@ def test_add_message_returns_inserted_id():
     t.start()
     try:
         for i in range(50):
-            m = server.add_message("s1", "assistant", f"reply{i}")
+            m = events.add_message("s1", "assistant", f"reply{i}")
             row = store.db("SELECT role, content FROM messages WHERE id=?", (m["id"],), one=True)
             assert row["role"] == "assistant" and row["content"] == f"reply{i}"
     finally:
@@ -246,12 +248,12 @@ def test_drive_records_usage_and_cleans_runs(make_user, monkeypatch):
     import asyncio
     u = make_user("a")
     _session(uid=u["id"])
-    monkeypatch.setattr(server, "run_claude", lambda *a, **k: {
+    monkeypatch.setattr(runner, "run_claude", lambda *a, **k: {
         "result": "ok", "usage": {"input_tokens": 3, "output_tokens": 4}, "total_cost_usd": 0.0, "model": "m"})
-    run = server.Run("s1", u["id"])
-    server.RUNS["s1"] = run
-    asyncio.run(server._drive(run, "p", [], "."))
-    assert "s1" not in server.RUNS and run.done.is_set()
+    run = runner.Run("s1", u["id"])
+    runner.RUNS["s1"] = run
+    asyncio.run(runner._drive(run, "p", [], "."))
+    assert "s1" not in runner.RUNS and run.done.is_set()
     r = store.db("SELECT * FROM usage_turns", one=True)
     msg = store.db("SELECT id FROM messages WHERE role='assistant'", one=True)
     assert r["message_id"] == msg["id"] and r["user_id"] == u["id"] and r["input_tokens"] == 3
@@ -261,26 +263,26 @@ def test_drive_cleans_runs_even_if_add_message_fails(make_user, monkeypatch):
     import asyncio
     u = make_user("a")
     _session(uid=u["id"])
-    monkeypatch.setattr(server, "run_claude", lambda *a, **k: {"result": "ok", "usage": {"input_tokens": 1}})
+    monkeypatch.setattr(runner, "run_claude", lambda *a, **k: {"result": "ok", "usage": {"input_tokens": 1}})
 
     def boom(*a, **k):
         raise sqlite3.OperationalError("disk full")
-    monkeypatch.setattr(server, "add_message", boom)
-    run = server.Run("s1", u["id"])
-    server.RUNS["s1"] = run
-    asyncio.run(server._drive(run, "p", [], "."))
-    assert "s1" not in server.RUNS and run.done.is_set()
+    monkeypatch.setattr(runner, "add_message", boom)
+    run = runner.Run("s1", u["id"])
+    runner.RUNS["s1"] = run
+    asyncio.run(runner._drive(run, "p", [], "."))
+    assert "s1" not in runner.RUNS and run.done.is_set()
 
 
 def test_drive_stopped_meta_flag(make_user, monkeypatch):
     import asyncio
     u = make_user("a")
     _session(uid=u["id"])
-    run = server.Run("s1", u["id"])
+    run = runner.Run("s1", u["id"])
     run.stopped = True
-    monkeypatch.setattr(server, "run_claude", lambda *a, **k: {})
-    server.RUNS["s1"] = run
-    asyncio.run(server._drive(run, "p", [], "."))
+    monkeypatch.setattr(runner, "run_claude", lambda *a, **k: {})
+    runner.RUNS["s1"] = run
+    asyncio.run(runner._drive(run, "p", [], "."))
     meta = json.loads(store.db("SELECT meta FROM messages WHERE role='error'", one=True)["meta"])
     assert meta["stopped"] is True
     assert store.db("SELECT COUNT(*) AS c FROM usage_turns", one=True)["c"] == 0

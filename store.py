@@ -1,4 +1,4 @@
-"""公共部分：配置、数据库、账号和登录校验。server.py、files_api.py、skills_api.py 都从这里取。"""
+"""公共部分：配置、数据库、账号和登录校验。server.py 和各个 *_api.py、runner.py 都从这里取。"""
 import glob
 import hashlib
 import ipaddress
@@ -15,6 +15,7 @@ from pathlib import Path
 
 from fastapi import Depends, HTTPException, Request
 
+VERSION = "0.7.0"
 BASE = Path(__file__).resolve().parent
 # 测试时用环境变量 PROJECTOR_DATA 把数据目录指到临时位置，不碰真实的 data/
 DATA = Path(os.environ["PROJECTOR_DATA"]).resolve() if os.environ.get("PROJECTOR_DATA") else BASE / "data"
@@ -348,6 +349,10 @@ def require_internal(user: dict = Depends(current_user)) -> dict:
 
 def is_admin(user: dict) -> bool:
     return user["role"] in ("admin", "internal")
+
+
+def can_bypass(user: dict) -> bool:
+    return user.get("role") == "admin" or bool(user.get("can_bypass"))
 
 
 def is_local(request: Request) -> bool:

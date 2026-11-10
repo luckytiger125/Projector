@@ -17,7 +17,7 @@ UNCATEGORIZED = "__uncategorized__"   # API 保留值：知识库筛选“未分
 MAX_NAME = 40
 
 
-# ---------- 查询和校验（server.py、kb.py 复用） ----------
+# ---------- 查询和校验（sessions_api.py、runner.py、kb.py 复用） ----------
 
 def get_section(section_id) -> dict | None:
     if section_id in (None, "", 0):

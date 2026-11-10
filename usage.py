@@ -1,6 +1,6 @@
 """按用户统计 token 用量：采集（record_turn）和聚合接口。
 
-不 import server，避免循环导入；server.py 在 _drive() 里调用 record_turn，并挂载本文件的 router。
+不 import server，避免循环导入；runner.py 在 _drive() 里调用 record_turn，server.py 挂载本文件的 router。
 """
 import calendar
 import time

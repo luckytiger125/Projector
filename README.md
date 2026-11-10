@@ -3,7 +3,10 @@
 ```
 台式机 Windows
  ├─ server.py                     中心服务：账号、多会话、权限确认、技能库，调用 Claude Code（工作目录 D:\）
- │  store.py / files_api.py / skills_api.py / kb.py / usage.py / sections.py / approval_mcp.py
+ │  server.py 只做组装；业务拆在：
+ │  events.py（SSE 推送）/ approvals.py（权限确认和提问）/ runner.py（调用 Claude Code）/
+ │  sessions_api.py（会话）/ auth_api.py（登录和账号）
+ │  其余：store.py / files_api.py / skills_api.py / kb.py / usage.py / sections.py / approval_mcp.py
  └─ 局域网：http://台式机名:8080（桌面软件自动发现）
         ▲
         │
