@@ -22,7 +22,9 @@ CENTER_TOKEN = os.environ["CENTER_TOKEN"]
 CENTER_SESSION = os.environ["CENTER_SESSION"]
 HEADERS = {"Authorization": f"Bearer {CENTER_TOKEN}"}
 
-_LOG = Path(__file__).resolve().parent / "data" / "logs" / "approval_mcp.log"
+# 测试时 PROJECTOR_DATA 指向临时目录，日志不写进仓库的 data/
+_DATA = Path(os.environ["PROJECTOR_DATA"]) if os.environ.get("PROJECTOR_DATA") else Path(__file__).resolve().parent / "data"
+_LOG = _DATA / "logs" / "approval_mcp.log"
 _LOG.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(filename=_LOG, level=logging.INFO, encoding="utf-8", format="%(asctime)s %(message)s")
 log = logging.getLogger("approval")
@@ -97,12 +99,14 @@ _STATE = {"changed": "⚠ 原文件在卡片写完后改过，内容可能过时
 
 
 @mcp.tool()
-async def kb_search(query: str, limit: int = 8) -> str:
+async def kb_search(query: str, limit: int = 8, type: str = "", section: str = "") -> str:
     """在团队知识库里搜索：经验（以前怎么做的）、文件卡片（重要文件的摘要和位置）、主题（项目、客户等）。
     query 用空格分开几个关键词，比如“退货 流程”“客户A 合同”。
-    遇到和公司业务、项目、客户、以前做过的事有关的问题，或要在文件库里找资料时，先用它查一下。"""
+    遇到和公司业务、项目、客户、以前做过的事有关的问题，或要在文件库里找资料时，先用它查一下。
+    type：只搜某一类（经验 / 文件卡片 / 主题），不确定时留空；
+    section：只搜某个分区（比如“合同”）；不确定时留空，留空搜全库。"""
     try:
-        d = await _post("/api/internal/kb/search", {"query": query, "limit": limit})
+        d = await _post("/api/internal/kb/search", {"query": query, "limit": limit, "type": type, "section": section})
     except Exception as e:
         return f"出错了：{e}"
     if not d["results"]:
@@ -141,16 +145,17 @@ async def kb_read(name: str) -> str:
 
 @mcp.tool()
 async def kb_write(title: str, content: str, type: str = "经验", tags: list[str] | None = None,
-                   summary: str = "", source: str = "", mode: str = "create") -> str:
+                   summary: str = "", source: str = "", mode: str = "create", section: str = "") -> str:
     """新建或修改知识库笔记（只有用户要求沉淀经验、整理文件进知识库、或明确让你记下来时才写）。
     title：标题，就是文件名和 [[链接]] 名，写成以后别人会搜的样子；
     content：Markdown 正文（不用写开头的 --- 属性，作者、日期会自动补上）；提到项目、客户、供应商、产品、人名时用 [[名字]] 链接；
     type：经验 / 文件卡片 / 主题；tags：几个标签；summary：一句话摘要；
     source：文件卡片对应的原文件或文件夹的完整路径（用来提醒原文件改过）；
     mode：create 新建（同名已存在会报错，防止重复）/ update 整体改写（先 kb_read，保留有用的旧内容）/ append 在末尾追加一段。
+    section：留空，不要自己填分区（分区由系统按当前会话自动补）。
     不要写进密码、身份证号、银行卡号。"""
     body = {"title": title, "content": content, "type": type, "mode": mode,
-            "tags": tags or None, "summary": summary or None, "source": source or None}
+            "tags": tags or None, "summary": summary or None, "source": source or None, "section": section}
     try:
         d = await _post("/api/internal/kb/write", body)
     except Exception as e:
@@ -169,11 +174,23 @@ async def read_document(path: str, offset: int = 0) -> str:
     try:
         d = await _post("/api/internal/kb/doc", {"path": path, "offset": offset}, timeout=240)
     except Exception as e:
-        return f"读不了：{e}"
-    text = d["text"] or "（这个文件里没有读到文字）"
+        # 提取失败（加密、损坏、没装 pypdf、过大……）：原样给出原因；失败不进缓存，处理好后直接重读
+        return f"读不了这个文件：{e}（这次失败没有被缓存，处理好文件或环境后可以直接重读）"
+    status = d.get("status") or "ok"
+    text = d["text"]
+    if status == "empty" and not d["start"]:
+        return "（这个文件里没有文字：文件是空的，或者只有图片、图表。需要内容的话请让用户确认文件是否正确）"
+    if not text and not d["start"]:
+        return "（没有读到文字：这个文件可能确实是空的。如果用户说里面有内容，请让用户另存为 docx/xlsx/pdf 后再试）"
+    scan_hint = ""
+    if status == "scan" and not d["start"]:
+        scan_hint = "\n\n（这个 PDF 几乎没有文字，可能是扫描件或图片，需要 OCR 才能读）"
+    text += scan_hint
     if d["more"] or d["start"]:
         text += f"\n\n（共 {d['total']} 字，这是第 {d['start']}~{d['end']} 字" + \
                 (f"；继续读用 offset={d['end']}）" if d["more"] else "）")
+    elif scan_hint:
+        text += f"\n\n（共 {d['total']} 字）"
     return text
 
 

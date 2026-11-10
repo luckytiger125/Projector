@@ -1,4 +1,4 @@
-"""台式机中心服务：账号、多会话、权限确认、调用 Claude Code；供局域网网页端、桌面软件和小智语音共同使用。
+"""台式机中心服务：账号、多会话、权限确认、调用 Claude Code；供局域网网页端和桌面软件使用。
 
 运行：python server.py              （配置见 config.bat 里的环境变量）
 重置密码：python server.py reset-password 用户名 新密码
@@ -24,14 +24,16 @@ from pydantic import BaseModel
 
 import files_api
 import kb
+import sections
 import skills_api
-from store import (AVATARS, BASE, CLAUDE_HOME, DATA, DISCOVERY_PORT, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, WS_ROOT,
+import usage
+from store import (_db, _db_lock, AVATARS, BASE, CLAUDE_HOME, DATA, DISCOVERY_PORT, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, WS_ROOT,
                    user_ws_dir,
-                   adopt_orphans, avatar_of, get_setting, set_setting, board_user, check_password, current_user, db, find_claude, first_admin,
+                   adopt_orphans, avatar_of, get_setting, set_setting, check_password, current_user, db, find_claude, first_admin,
                    get_user, hash_password, is_admin, is_local, issue_token, jdump, posix_rule_path,
                    require_admin, require_internal, session_for, session_workspace, user_public)
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 LOGS = DATA / "logs"
 LOGS.mkdir(exist_ok=True)
 TASK_TIMEOUT = float(os.environ.get("CLAUDE_TASK_TIMEOUT", "3600"))
@@ -94,15 +96,6 @@ WEB_HINT = (
     "这台电脑是 Windows，命令通过 Git Bash 执行：python 不能用时试 py；没有 unzip 时用 tar -xf 文件.zip 或 "
     "powershell -Command \"Expand-Archive 文件.zip 目标文件夹\"；文件路径用正斜杠或加引号。"
 )
-VOICE_HINT = (
-    "用户是通过一块 2 寸小屏幕的语音助手给你下指令的，指令经过语音识别和另一个助手转述，可能有错字。"
-    "你的最终回答会显示在小屏幕上并被朗读：用中文给出 150 字以内的结论，"
-    "不要用 Markdown 表格、代码块或长列表。较长的内容写进文件，只告诉用户路径。"
-    "修改文件和执行命令需要用户口头确认，尽量把需要确认的操作合并成一次；被拒绝时不要重试同样的操作。"
-    "团队知识库（{kb}）里有以前的经验和重要文件的卡片，涉及公司业务或找资料时先用 kb_search 查。"
-    "读 Word、Excel、PPT、PDF 用 read_document。"
-)
-
 # 聊天里的两个快捷动作：给 Claude 的完整指令；用户看到的是简短的一句
 KB_ACTIONS = {
     "distill": (
@@ -137,15 +130,73 @@ app = FastAPI()
 app.include_router(files_api.router)
 app.include_router(skills_api.router)
 app.include_router(kb.router)
+app.include_router(usage.router)
+app.include_router(sections.router)
+
+kb.start_prune_thread()   # 文档缓存每 7 天清理一次，放后台线程，不拖慢启动
+try:
+    kb.recover_section_rename()   # 上次分区改名中途崩溃的话，把没改完的笔记补上
+except Exception:
+    kb._log_section("启动时恢复分区改名失败")
 
 
 # ---------- 会话 ----------
 
-def session_view(s: dict) -> dict:
+def session_stats(sids: list[str]) -> dict[str, dict]:
+    """一次查询补齐一批会话的消息数、最后一轮结果、文件数（列表里不能逐会话查库）。"""
+    out = {sid: {"message_count": 0, "last": None, "file_count": 0} for sid in sids}
+    for i in range(0, len(sids), 500):
+        chunk = sids[i:i + 500]
+        ph = ",".join("?" * len(chunk))
+        for r in db(f"SELECT session_id, COUNT(*) AS c FROM messages WHERE session_id IN ({ph}) GROUP BY session_id", chunk):
+            out[r["session_id"]]["message_count"] = r["c"]
+        for r in db(f"SELECT m.session_id, m.role, m.meta FROM messages m WHERE m.session_id IN ({ph}) AND m.id IN "
+                    "(SELECT MAX(id) FROM messages WHERE role IN ('assistant','error') GROUP BY session_id)", chunk):
+            try:
+                meta = json.loads(r["meta"] or "{}")
+            except ValueError:
+                meta = {}
+            out[r["session_id"]]["last"] = {"role": r["role"], "meta": meta if isinstance(meta, dict) else {}}
+        for r in db(f"SELECT session_id, manifest FROM links WHERE session_id IN ({ph})", chunk):
+            try:
+                m = json.loads(r["manifest"] or "{}")
+            except ValueError:
+                m = {}
+            out[r["session_id"]]["file_count"] += len(m) if isinstance(m, (dict, list)) else 0
+    return out
+
+
+def session_view(s: dict, stats: dict | None = None) -> dict:
     owner = get_user(s.get("user_id")) or {}
-    return {**s, "running": s["id"] in RUNS, "pending": len(pending_for(s["id"])) + len(questions_for(s["id"])),
+    st = stats if stats is not None else session_stats([s["id"]])[s["id"]]
+    pending = len(pending_for(s["id"])) + len(questions_for(s["id"]))
+    running = s["id"] in RUNS
+    last = st["last"]
+    if pending:
+        status = "pending"
+    elif running:
+        status = "running"
+    elif not st["message_count"]:
+        status = "idle"   # 还没发过消息；前端据此显示“未开始”
+    elif last and (last["role"] == "error" or any(last["meta"].get(k) for k in ("stopped", "timed_out", "error"))):
+        status = "stopped"
+    else:
+        status = "done"
+    duration = (last["meta"].get("seconds") if last else None)
+    if duration is None and s.get("created") and s.get("updated"):
+        duration = max(0, round(s["updated"] - s["created"]))
+    return {**s, "running": running, "pending": pending,
             "owner": owner.get("display_name", ""), "owner_avatar": avatar_of(owner) if owner else "orange",
-            "work_dir": s.get("work_dir") or str(FILE_ROOT)}
+            "work_dir": s.get("work_dir") or str(FILE_ROOT),
+            "section_name": sections.section_name(s.get("section_id")),
+            "section_archived": bool((sections.get_section(s.get("section_id")) or {}).get("archived")),
+            "status": status, "duration_seconds": duration,
+            "message_count": st["message_count"], "file_count": st["file_count"]}
+
+
+def session_views(rows: list[dict]) -> list[dict]:
+    stats = session_stats([r["id"] for r in rows])
+    return [session_view(r, stats[r["id"]]) for r in rows]
 
 
 def push_session(sid: str) -> None:
@@ -154,22 +205,43 @@ def push_session(sid: str) -> None:
         broadcast({"type": "session", "session": session_view(s)}, s["user_id"])
 
 
-def create_session(title: str, source: str, owner: dict, work_dir: str | None = None) -> dict:
+def create_session(title: str, owner: dict, work_dir: str | None = None, section_id: int | None = None) -> dict:
+    """section_id：None=用上次新建记住的分区（已不存在或已归档则未分类）；0=未分类（同时清掉记住的分区）；
+    其他=必须存在且未归档，并记住。注意不能先把 0 收成 None，否则又回退到上次的分区。"""
+    if section_id is None:
+        last = (get_user(owner["id"]) or {}).get("last_section_id")
+        sec = last if sections.is_active(last) else None
+    elif section_id == 0:
+        sec = None
+        db("UPDATE users SET last_section_id=NULL WHERE id=?", (owner["id"],))
+    else:
+        sec = sections.require_active(section_id)["id"]
+        db("UPDATE users SET last_section_id=? WHERE id=?", (sec, owner["id"]))
     now = time.time()
     sid = uuid.uuid4().hex[:12]
-    db("INSERT INTO sessions (id, title, source, claude_session, created, updated, bypass, created_by, user_id, work_dir) "
-       "VALUES (?,?,?,?,?,?,0,?,?,?)",
-       (sid, title, source, None, now, now, owner["display_name"], owner["id"], work_dir))
+    db("INSERT INTO sessions (id, title, source, claude_session, created, updated, bypass, created_by, user_id, work_dir, "
+       "section_id) VALUES (?,?,?,?,?,?,0,?,?,?,?)",
+       (sid, title, "web", None, now, now, owner["display_name"], owner["id"], work_dir, sec))
     push_session(sid)
     return db("SELECT * FROM sessions WHERE id=?", (sid,), one=True)
 
 
 def add_message(sid: str, role: str, content: str, meta: dict | None = None) -> dict:
     now = time.time()
-    db("INSERT INTO messages (session_id, role, content, meta, created) VALUES (?,?,?,?,?)",
-       (sid, role, content, jdump(meta or {}), now))
-    db("UPDATE sessions SET updated=? WHERE id=?", (now, sid))
-    msg = db("SELECT * FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,), one=True)
+    # INSERT、UPDATE、按 lastrowid 取回在同一把锁里完成，避免并发的 event 消息插队导致取错 id。
+    # 持锁期间不能再调用 db() / push_session() / session_view()（_db_lock 不可重入）。
+    with _db_lock:
+        try:
+            cur = _db.execute("INSERT INTO messages (session_id, role, content, meta, created) VALUES (?,?,?,?,?)",
+                              (sid, role, content, jdump(meta or {}), now))
+            mid = cur.lastrowid
+            _db.execute("UPDATE sessions SET updated=? WHERE id=?", (now, sid))
+            _db.commit()
+        except Exception:
+            _db.rollback()
+            raise
+        row = _db.execute("SELECT * FROM messages WHERE id=?", (mid,)).fetchone()
+        msg = dict(row)
     msg["meta"] = json.loads(msg["meta"])
     owner = (db("SELECT user_id FROM sessions WHERE id=?", (sid,), one=True) or {}).get("user_id")
     broadcast({"type": "message", "session_id": sid, "message": msg}, owner)
@@ -254,7 +326,7 @@ def _kill_tree(proc: subprocess.Popen) -> None:
 
 
 def _hint_file(sess: dict, owner: dict) -> Path:
-    hint = (VOICE_HINT if sess["source"] == "voice" else WEB_HINT).format(user=owner["display_name"], kb=KB_ROOT)
+    hint = WEB_HINT.format(user=owner["display_name"], kb=KB_ROOT)
     path = DATA / "mcp" / f"hint_{sess['id']}.txt"
     path.write_text(hint, encoding="utf-8")
     return path
@@ -262,7 +334,8 @@ def _hint_file(sess: dict, owner: dict) -> Path:
 
 def _deny_rules(owner: dict) -> list[str]:
     """软隔离：不让 Claude 用文件工具碰聊天记录库、待审核的 skill 和别人的工作区。"""
-    paths = [DATA / "center.db", DATA / "internal_token.txt", DATA / "mcp", DATA / "skills" / "submissions", TRASH]
+    paths = [DATA / "center.db", DATA / "internal_token.txt", DATA / "mcp", DATA / "skills" / "submissions", TRASH,
+             kb.DOC_CACHE_DIR]   # 文档缓存：Claude 只能通过 read_document 读，不能直接碰缓存目录
     for u in db("SELECT * FROM users WHERE id != ?", (owner["id"],)):
         paths += [user_ws_dir(u, create=False), DATA / "plugins" / str(u["id"])]
     rules = []
@@ -300,11 +373,11 @@ def build_command(claude_bin: str, sess: dict, owner: dict, extra_dirs: list[Pat
         },
     }}}), encoding="utf-8")
     cmd += ["--mcp-config", str(mcp_config)]
-    if sess["bypass"] and can_bypass(owner) and sess["source"] != "voice":
+    if sess["bypass"] and can_bypass(owner):
         cmd += ["--permission-mode", "bypassPermissions"]
     elif perm_mode() == "strict":
-        # 严格：只读命令 + 白名单自动放行；语音会话改文件也要确认
-        auto = READ_TOOLS + SAFE_BASH + SKILL_TOOLS + bash_allow_rules() + ([] if sess["source"] == "voice" else EDIT_TOOLS)
+        # 严格：只读命令 + 白名单自动放行；改文件也要确认
+        auto = READ_TOOLS + SAFE_BASH + SKILL_TOOLS + bash_allow_rules() + EDIT_TOOLS
         cmd += ["--permission-prompt-tool", "mcp__center__approve", "--allowedTools", *auto]
     else:
         # 标准：读、改、运行命令都自动放行，只有危险命令走确认（ask 规则优先于 allow）
@@ -458,9 +531,19 @@ async def start_turn(sess: dict, text: str, author: dict, refs: list[str] | None
         meta["skill"] = skill
     if action:
         meta["kb"] = action
-    add_message(sid, "user", text, meta)
-    cmd = build_command(claude_bin, sess, owner, extra)
-    prompt = build_prompt(KB_ACTIONS[action][1] if action else text, refs, skill)
+    try:
+        add_message(sid, "user", text, meta)
+        cmd = build_command(claude_bin, sess, owner, extra)
+        action_text = KB_ACTIONS[action][1] if action else text
+        if action:
+            sec = sections.active_name_for_session(db("SELECT section_id FROM sessions WHERE id=?", (sid,), one=True))
+            if sec:
+                action_text += (f"\n\n（这个会话属于“{sec}”分区。分区由系统按会话自动补到笔记上，"
+                                "kb_write 的 section 参数留空，不要自己填。）")
+        prompt = build_prompt(action_text, refs, skill)
+    except Exception:
+        RUNS.pop(sid, None)  # 任何一步失败都要清掉，否则会话一直显示“进行中”
+        raise
     asyncio.create_task(_drive(run, prompt, cmd, cwd))
     return run
 
@@ -477,33 +560,48 @@ async def _drive(run: Run, prompt: str, cmd: list[str], cwd: str) -> None:
     except Exception as e:
         final = {"is_error": True, "result": f"启动 claude 失败：{e}"}
     await asyncio.sleep(0)  # 让线程里排队的事件先处理完
-    if final.get("session_id"):
-        db("UPDATE sessions SET claude_session=? WHERE id=?", (final["session_id"], run.sid))
+    try:
+        if final.get("session_id"):
+            db("UPDATE sessions SET claude_session=? WHERE id=?", (final["session_id"], run.sid))
 
-    meta = {"tools": run.tools, "seconds": round(time.time() - started), "cost": final.get("total_cost_usd")}
-    if run.stopped:
-        run.reply = "已停止。"
-        add_message(run.sid, "error", run.reply + (f"\n\n{run.text}" if run.text else ""), meta)
-    elif run.timed_out:
-        run.reply = f"超过 {int(TASK_TIMEOUT // 60)} 分钟没完成，已停止。"
-        add_message(run.sid, "error", run.reply, meta)
-    elif final.get("is_error"):
-        run.reply = f"出错了：{final.get('result') or final.get('subtype')}"
-        add_message(run.sid, "error", run.reply, meta)
-    else:
-        run.ok = True
-        run.reply = final.get("result") or run.text
-        add_message(run.sid, "assistant", run.reply, meta)
+        meta = {"tools": run.tools, "seconds": round(time.time() - started), "cost": final.get("total_cost_usd")}
+        msg = None
+        if run.stopped:
+            run.reply = "已停止。"
+            msg = add_message(run.sid, "error", run.reply + (f"\n\n{run.text}" if run.text else ""),
+                              {**meta, "stopped": True})
+        elif run.timed_out:
+            run.reply = f"超过 {int(TASK_TIMEOUT // 60)} 分钟没完成，已停止。"
+            msg = add_message(run.sid, "error", run.reply, {**meta, "timed_out": True})
+        elif final.get("is_error"):
+            run.reply = f"出错了：{final.get('result') or final.get('subtype')}"
+            msg = add_message(run.sid, "error", run.reply, {**meta, "error": True})
+        else:
+            run.ok = True
+            run.reply = final.get("result") or run.text
+            msg = add_message(run.sid, "assistant", run.reply, meta)
 
-    if "warn_perm" in run.warnings:
-        add_message(run.sid, "event", "⚠ 这一轮里权限确认通道出了故障，需要确认的操作没有执行。重发一次通常就好；"
-                                      f"反复出现请把 data/logs/claude_{run.sid}.log 发给管理员。")
-    for a in pending_for(run.sid) + questions_for(run.sid):
-        if not a["future"].done():
-            a["future"].set_result((False, "任务已结束"))
-    del RUNS[run.sid]
-    run.done.set()
-    push_session(run.sid)
+        try:
+            if msg:
+                usage.record_turn(run.sid, run.owner_id, msg["id"], final)
+        except Exception:  # record_turn 自己也会兜底，这里再保一层
+            usage.log_failure(run.sid, "record_turn")
+
+        if "warn_perm" in run.warnings:  # 独立调用，不要覆盖 msg
+            add_message(run.sid, "event", "⚠ 这一轮里权限确认通道出了故障，需要确认的操作没有执行。重发一次通常就好；"
+                                          f"反复出现请把 data/logs/claude_{run.sid}.log 发给管理员。")
+    except Exception:
+        usage.log_failure(run.sid, "drive")
+    finally:
+        # 无论上面哪一步失败，都必须清掉 RUNS，否则会话会一直显示“进行中”
+        try:
+            for a in pending_for(run.sid) + questions_for(run.sid):
+                if not a["future"].done():
+                    a["future"].set_result((False, "任务已结束"))
+        finally:
+            RUNS.pop(run.sid, None)
+            run.done.set()
+            push_session(run.sid)
 
 
 # ---------- 登录和账号 ----------
@@ -638,8 +736,6 @@ def admin_create_user(body: Credentials, admin: dict = Depends(require_admin)):
 @app.patch("/api/admin/users/{uid}")
 def admin_update_user(uid: int, body: UserPatch, admin: dict = Depends(require_admin)):
     u = _target_user(uid)
-    if u["role"] == "device" and (body.role or body.password or body.disabled):
-        raise HTTPException(400, "板子账号不能登录，只能改名字、头像和技能")
     if body.display_name is not None:
         db("UPDATE users SET display_name=? WHERE id=?", (body.display_name.strip()[:32] or u["username"], uid))
     if body.avatar is not None:
@@ -671,8 +767,8 @@ def admin_update_user(uid: int, body: UserPatch, admin: dict = Depends(require_a
 @app.delete("/api/admin/users/{uid}")
 def admin_delete_user(uid: int, admin: dict = Depends(require_admin)):
     u = _target_user(uid)
-    if u["role"] == "device" or uid == admin["id"]:
-        raise HTTPException(400, "不能删除板子账号或自己")
+    if uid == admin["id"]:
+        raise HTTPException(400, "不能删除自己")
     if any(r.owner_id == uid for r in RUNS.values()):
         raise HTTPException(409, "这个用户还有任务在进行")
     ud = user_ws_dir(u, create=False)  # 删账号记录之前先定位工作区
@@ -765,7 +861,7 @@ def manifest():
 
 @app.get("/api/admin/sessions")
 def admin_sessions(admin: dict = Depends(require_admin)):
-    return [session_view(s) for s in db("SELECT * FROM sessions ORDER BY updated DESC")]
+    return session_views(db("SELECT * FROM sessions ORDER BY updated DESC"))
 
 
 # ---------- 会话接口 ----------
@@ -773,12 +869,14 @@ def admin_sessions(admin: dict = Depends(require_admin)):
 class NewSession(BaseModel):
     title: str = "新会话"
     work_dir: str | None = None
+    section_id: int | None = None   # 不传=用上次的分区；0=未分类
 
 
 class UpdateSession(BaseModel):
     title: str | None = None
     bypass: bool | None = None
     work_dir: str | None = None
+    section_id: int | None = None   # 不传（或 null）=不改；0=清空为未分类
 
 
 class Send(BaseModel):
@@ -796,17 +894,6 @@ class ApprovalRequest(BaseModel):
 
 class Decision(BaseModel):
     allow: bool
-
-
-class VoiceTask(BaseModel):
-    task: str
-    continue_last: bool = False
-    wait: float = 40
-
-
-class VoiceConfirm(BaseModel):
-    allow: bool
-    wait: float = 40
 
 
 def _check_work_dir(path: str, user: dict) -> str:
@@ -830,14 +917,21 @@ app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 
 @app.get("/api/sessions")
-def list_sessions(user: dict = Depends(current_user)):
-    return [session_view(s) for s in db("SELECT * FROM sessions WHERE user_id=? ORDER BY updated DESC", (user["id"],))]
+def list_sessions(section_id: int | None = None, user: dict = Depends(current_user)):
+    # 判断必须用 is None / == 0：0 是假值，“未分类”不能被当成“全部”
+    if section_id is None:
+        rows = db("SELECT * FROM sessions WHERE user_id=? ORDER BY updated DESC", (user["id"],))
+    elif section_id == 0:
+        rows = db("SELECT * FROM sessions WHERE user_id=? AND section_id IS NULL ORDER BY updated DESC", (user["id"],))
+    else:
+        rows = db("SELECT * FROM sessions WHERE user_id=? AND section_id=? ORDER BY updated DESC", (user["id"], section_id))
+    return session_views(rows)
 
 
 @app.post("/api/sessions")
 def new_session(body: NewSession, user: dict = Depends(current_user)):
     work_dir = _check_work_dir(body.work_dir, user) if body.work_dir else None
-    return session_view(create_session(body.title.strip()[:40] or "新会话", "web", user, work_dir))
+    return session_view(create_session(body.title.strip()[:40] or "新会话", user, work_dir, body.section_id))
 
 
 @app.get("/api/sessions/{sid}")
@@ -861,11 +955,17 @@ def read_session(sid: str, user: dict = Depends(current_user)):
 def update_session(sid: str, body: UpdateSession, user: dict = Depends(current_user)):
     s = session_for(sid, user)
     _owner_only(s, user)
+    new_section = False
+    if body.section_id is not None:   # 先校验，免得改了标题才发现分区不对
+        if body.section_id == 0:
+            new_section = None
+        elif body.section_id == s.get("section_id"):
+            new_section = False   # 没变（即使当前分区已归档）：放行，不动
+        else:
+            new_section = sections.require_active(body.section_id)["id"]
     if body.title is not None:
         db("UPDATE sessions SET title=? WHERE id=?", (body.title.strip()[:40] or "未命名", sid))
     if body.bypass is not None:
-        if body.bypass and s["source"] == "voice":
-            raise HTTPException(400, "语音会话不能完全放行")
         if body.bypass and not can_bypass(user):
             raise HTTPException(403, "你没有“完全放行”的权限，请找管理员开通")
         db("UPDATE sessions SET bypass=? WHERE id=?", (int(body.bypass), sid))
@@ -873,6 +973,8 @@ def update_session(sid: str, body: UpdateSession, user: dict = Depends(current_u
         if s["claude_session"]:
             raise HTTPException(409, "会话开始后不能换工作文件夹（Claude 的记忆跟着文件夹走），请新建一个会话")
         db("UPDATE sessions SET work_dir=? WHERE id=?", (_check_work_dir(body.work_dir, user), sid))
+    if new_section is not False:   # PATCH 不改 users.last_section_id
+        db("UPDATE sessions SET section_id=? WHERE id=?", (new_section, sid))
     push_session(sid)
     return session_view(session_for(sid, user))
 
@@ -898,6 +1000,8 @@ def delete_session(sid: str, user: dict = Depends(current_user)):
 async def send_message(sid: str, body: Send, user: dict = Depends(current_user)):
     s = session_for(sid, user)
     _owner_only(s, user)
+    if s.get("source") == "voice":
+        raise HTTPException(400, "这是语音功能留下的历史记录，只能查看，不能继续对话；请新建会话")
     text = body.text.strip()
     refs = [str(files_api.resolve_path(r, user)) for r in body.refs[:30]]
     if body.action:
@@ -973,7 +1077,7 @@ def transcript(sid: str, user: dict = Depends(current_user)):
     return {"steps": steps}
 
 
-# 给 approval_mcp.py 用：挂起直到有人在网页或语音里做出决定
+# 给 approval_mcp.py 用：挂起直到有人在网页里做出决定
 @app.post("/api/approvals")
 async def request_approval(body: ApprovalRequest, _: dict = Depends(require_internal)):
     run = RUNS.get(body.session_id)
@@ -1035,11 +1139,8 @@ def _qa_text(questions: list[dict], answers: list[dict]) -> str:
 @app.post("/api/questions")
 async def ask_question(body: QuestionRequest, _: dict = Depends(require_internal)):
     run = RUNS.get(body.session_id)
-    sess = db("SELECT source FROM sessions WHERE id=?", (body.session_id,), one=True)
     if not run:
         return {"text": "任务已结束。"}
-    if sess and sess["source"] == "voice":
-        return {"text": "这是语音会话，不能弹出选项。请把问题和选项简短地写进回答里，让用户口头回复。"}
     questions = []
     for q in body.questions[:4]:
         opts = [{"label": str(o.get("label", "")).strip()[:80], "description": str(o.get("description", "")).strip()[:200]}
@@ -1118,68 +1219,6 @@ async def events(request: Request, user: dict = Depends(current_user)):
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-
-# ---------- 给小智 MCP 工具用（语音会话都归“板子”账号） ----------
-# 每个新话题开一个语音会话，追问时接着最近的语音会话
-
-def latest_voice_session() -> dict | None:
-    return db("SELECT * FROM sessions WHERE source='voice' ORDER BY updated DESC LIMIT 1", one=True)
-
-
-async def wait_voice(sid: str, timeout: float) -> dict:
-    """等到任务完成或出现待确认操作，最多等 timeout 秒。"""
-    end = time.time() + timeout
-    while True:
-        run = RUNS.get(sid)
-        pending = pending_for(sid)
-        if pending:
-            return {"status": "confirm",
-                    "reply": f"需要确认：{pending[0]['summary']}。请问用户是否同意，用户回答后调用 claude_confirm。"}
-        if not run:
-            msg = db("SELECT * FROM messages WHERE session_id=? AND role IN ('assistant','error') "
-                     "ORDER BY id DESC LIMIT 1", (sid,), one=True)
-            ok = bool(msg and msg["role"] == "assistant")
-            return {"status": "done" if ok else "failed", "reply": msg["content"] if msg else "没有结果。"}
-        if time.time() >= end:
-            tools = f"，已经做了 {len(run.tools)} 步操作" if run.tools else ""
-            return {"status": "running",
-                    "reply": f"任务还在进行{tools}，可能需要几分钟。稍后问我“任务进度”就能看到结果。"}
-        await asyncio.sleep(0.3)
-
-
-@app.post("/api/voice")
-async def voice_task(body: VoiceTask, _: dict = Depends(require_internal)):
-    task = body.task.strip()
-    last = latest_voice_session()
-    if last and last["id"] in RUNS:
-        state = await wait_voice(last["id"], 0)
-        if state["status"] == "running":
-            return {"status": "busy", "reply": "上一个语音任务还在进行，请等它完成后再下新任务。"}
-        return state  # 有操作在等确认，先把它告诉用户
-    board = board_user()
-    sess = last if (body.continue_last and last) else create_session("🎤 " + task[:18], "voice", board)
-    await start_turn(sess, task, board)
-    return await wait_voice(sess["id"], body.wait)
-
-
-@app.post("/api/voice/confirm")
-async def voice_confirm(body: VoiceConfirm, _: dict = Depends(require_internal)):
-    last = latest_voice_session()
-    pending = pending_for(last["id"]) if last else []
-    if not pending:
-        return {"status": "none", "reply": "现在没有等待确认的操作。"}
-    resolve_approval(pending[0]["id"], body.allow, "语音")
-    await asyncio.sleep(0.5)  # 给 Claude 一点时间继续，免得马上读到同一个状态
-    return await wait_voice(last["id"], body.wait)
-
-
-@app.get("/api/voice/status")
-async def voice_status(_: dict = Depends(require_internal)):
-    last = latest_voice_session()
-    if not last:
-        return {"status": "none", "reply": "还没有执行过语音任务。"}
-    return await wait_voice(last["id"], 0)
 
 
 # ---------- 局域网自动发现：桌面软件广播询问，这里回复自己的名字和端口 ----------

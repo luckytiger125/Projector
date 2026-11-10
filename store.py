@@ -16,7 +16,8 @@ from pathlib import Path
 from fastapi import Depends, HTTPException, Request
 
 BASE = Path(__file__).resolve().parent
-DATA = BASE / "data"
+# 测试时用环境变量 PROJECTOR_DATA 把数据目录指到临时位置，不碰真实的 data/
+DATA = Path(os.environ["PROJECTOR_DATA"]).resolve() if os.environ.get("PROJECTOR_DATA") else BASE / "data"
 for _d in ("mcp", "workspaces", "skills/library", "skills/submissions", "skills/versions", "plugins", "preview"):
     (DATA / _d).mkdir(parents=True, exist_ok=True)
 
@@ -51,7 +52,6 @@ CLAUDE_HOME = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude
 PORT = int(os.environ.get("CENTER_PORT", "8080"))
 DISCOVERY_PORT = int(os.environ.get("DISCOVERY_PORT", "8090"))
 
-BOARD_USERNAME = "board"
 TOKEN_IDLE_DAYS = 90
 
 
@@ -138,16 +138,55 @@ _db.executescript(
         deleted_by INTEGER, deleted_at REAL, reason TEXT);
     CREATE TABLE IF NOT EXISTS file_ops (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT, path TEXT, detail TEXT, created REAL);
+    CREATE TABLE IF NOT EXISTS usage_turns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        user_id INTEGER,
+        message_id INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        cache_read_tokens INTEGER,
+        cache_write_tokens INTEGER,
+        cost_usd REAL,
+        created REAL,
+        source TEXT DEFAULT 'result');
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_usage_turn_model ON usage_turns(message_id, model);
+    CREATE INDEX IF NOT EXISTS idx_usage_user_time ON usage_turns(user_id, created);
+    CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_turns(session_id);
+    CREATE TABLE IF NOT EXISTS sections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        color TEXT DEFAULT '',
+        sort INTEGER DEFAULT 0,
+        archived INTEGER DEFAULT 0,
+        created REAL);
+    CREATE INDEX IF NOT EXISTS idx_sections_active ON sections(archived, sort, id);
+    CREATE TABLE IF NOT EXISTS doc_cache (
+        source_path TEXT PRIMARY KEY,
+        size INTEGER,
+        mtime_ns INTEGER,
+        extractor_version INTEGER,
+        md_name TEXT,
+        chars INTEGER,
+        bytes INTEGER,
+        status TEXT,
+        hits INTEGER DEFAULT 0,
+        created REAL,
+        used REAL);
     """
 )
 for _table, _col in (("sessions", "bypass INTEGER DEFAULT 0"), ("sessions", "created_by TEXT DEFAULT ''"),
                      ("sessions", "user_id INTEGER"), ("sessions", "work_dir TEXT"), ("users", "avatar TEXT"),
                      ("library", "version INTEGER DEFAULT 1"), ("submissions", "changelog TEXT"),
-                     ("users", "ws_name TEXT"), ("sessions", "ws_dir TEXT")):
+                     ("users", "ws_name TEXT"), ("sessions", "ws_dir TEXT"),
+                     ("sessions", "section_id INTEGER"), ("users", "last_section_id INTEGER")):
     try:
         _db.execute(f"ALTER TABLE {_table} ADD COLUMN {_col}")
     except sqlite3.OperationalError:
         pass  # 列已存在
+_db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_section ON sessions(section_id)")
+_db.commit()
 
 
 def db(sql: str, args=(), one=False):
@@ -156,6 +195,31 @@ def db(sql: str, args=(), one=False):
         _db.commit()
         rows = [dict(r) for r in cur.fetchall()]
     return (rows[0] if rows else None) if one else rows
+
+
+def db_insert(sql: str, args=()) -> int:
+    """执行一条 INSERT，在同一把锁里取回 lastrowid，避免并发写入时取到别人的 id。"""
+    with _db_lock:
+        try:
+            cur = _db.execute(sql, args)
+            _db.commit()
+        except Exception:
+            _db.rollback()
+            raise
+        return cur.lastrowid
+
+
+def db_many(sql: str, rows) -> int:
+    """一次锁、一次提交写完多行；任何一行失败整批回滚。返回实际写入的行数（ON CONFLICT 跳过的不算）。"""
+    with _db_lock:
+        before = _db.total_changes
+        try:
+            _db.executemany(sql, rows)
+            _db.commit()
+        except Exception:
+            _db.rollback()
+            raise
+        return _db.total_changes - before
 
 
 def get_setting(key: str, default=None):
@@ -177,8 +241,6 @@ AVATARS = ["orange", "lemon", "lime", "grapefruit", "peach", "cherry", "grape", 
 def avatar_of(u: dict) -> str:
     if u.get("avatar") in AVATARS:
         return u["avatar"]
-    if u.get("role") == "device":
-        return "orange"  # 板子就是小橙子
     return AVATARS[(u.get("id") or 0) % len(AVATARS)]
 
 def hash_password(pw: str) -> str:
@@ -206,32 +268,35 @@ def get_user(uid) -> dict | None:
     return db("SELECT * FROM users WHERE id=?", (uid,), one=True)
 
 
-def board_user() -> dict:
-    u = db("SELECT * FROM users WHERE username=?", (BOARD_USERNAME,), one=True)
-    if not u:
-        db("INSERT INTO users (username, display_name, pw_hash, role, created) VALUES (?,?,?,?,?)",
-           (BOARD_USERNAME, "板子", "", "device", time.time()))
-        u = db("SELECT * FROM users WHERE username=?", (BOARD_USERNAME,), one=True)
-    return u
-
-
 def first_admin() -> dict | None:
     return db("SELECT * FROM users WHERE role='admin' AND disabled=0 ORDER BY id LIMIT 1", one=True)
 
 
 def adopt_orphans() -> None:
-    """升级前没有账号的老会话：语音的给板子账号，其他给第一个管理员。"""
-    db("UPDATE sessions SET user_id=? WHERE user_id IS NULL AND source='voice'", (board_user()["id"],))
+    """升级前没有账号的老会话：统一归到第一个管理员。"""
     if admin := first_admin():
         db("UPDATE sessions SET user_id=? WHERE user_id IS NULL", (admin["id"],))
 
 
-board_user()
 adopt_orphans()
 
 
+def migrate_legacy() -> None:
+    """ESP32 / 语音模块已移除，升级时处理老数据（可重复执行，不删任何数据）：
+    - role='device' 的“板子”账号设为停用并清掉令牌（登录和令牌校验本来就拒绝停用账号）；
+    - source='voice' 的历史语音会话保留为只读记录，归到第一个管理员名下；还没有管理员就先不动，下次启动再处理。"""
+    db("UPDATE users SET disabled=1 WHERE role='device' AND disabled=0")
+    db("DELETE FROM tokens WHERE user_id IN (SELECT id FROM users WHERE role='device')")
+    if admin := first_admin():
+        db("UPDATE sessions SET user_id=? WHERE source='voice' AND (user_id IS NULL OR user_id NOT IN "
+           "(SELECT id FROM users WHERE role='admin'))", (admin["id"],))
+
+
+migrate_legacy()
+
+
 def _load_internal_token() -> str:
-    """给 approval_mcp.py 和 claude_mcp.py 用的内部令牌，不给人用。"""
+    """给 approval_mcp.py 用的内部令牌，不给人用。"""
     path = DATA / "internal_token.txt"
     if not path.exists():
         path.write_text(secrets.token_urlsafe(24), encoding="utf-8")
@@ -262,7 +327,7 @@ def current_user(request: Request) -> dict:
         return INTERNAL
     row = db("SELECT u.*, t.last_used FROM tokens t JOIN users u ON u.id=t.user_id WHERE t.token=?", (token,), one=True)
     now = time.time()
-    if not row or row["disabled"] or row["role"] == "device" or now - row["last_used"] > TOKEN_IDLE_DAYS * 86400:
+    if not row or row["disabled"] or now - row["last_used"] > TOKEN_IDLE_DAYS * 86400:
         raise HTTPException(401, "登录已失效，请重新登录")
     if now - row["last_used"] > 600:
         db("UPDATE tokens SET last_used=? WHERE token=?", (now, token))
