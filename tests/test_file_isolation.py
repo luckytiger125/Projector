@@ -529,3 +529,261 @@ def test_delete_session_removes_guard_file(env, two_users):
     assert pf.exists()
     assert env.c.delete(f"/api/sessions/{sess['id']}", headers=a["headers"]).status_code == 200
     assert not pf.exists()
+
+
+# ======================================================================
+# 六、files_api：个人工作区只有本人能进（管理员也不例外）、回收站脱敏、空间占用
+# ======================================================================
+
+import files_api  # noqa: E402
+
+
+@pytest.fixture
+def fx(env, make_user):
+    """A 有两个文件的工作区；B 是普通用户；boss 是管理员"""
+    import shutil
+    store.db("DELETE FROM trash")
+    store.db("DELETE FROM file_ops")
+    shutil.rmtree(store.TRASH, ignore_errors=True)
+    a = make_user("zhang", display_name="张三")
+    b = make_user("li", display_name="李四")
+    boss = make_user("boss", role="admin", display_name="老板")
+    ua = store.get_user(a["id"])
+    sub = store.user_ws_dir(ua) / "会话1"
+    sub.mkdir(exist_ok=True)
+    (sub / "秘密.txt").write_text("工资表内容", encoding="utf-8")
+    (sub / "报价.docx").write_bytes(b"x" * 300)
+    (sub / "秘密.txt").write_text("a" * 1000, encoding="utf-8")
+    ns = type("NS", (), {})()
+    ns.c, ns.a, ns.b, ns.boss, ns.ua, ns.sub = env.c, a, b, boss, ua, sub
+    return ns
+
+
+def _ws_forms(fx):
+    """同一个文件的各种写法：ws<id>: 前缀、绝对路径"""
+    return [f"ws{fx.a['id']}:会话1/秘密.txt", str(fx.sub / "秘密.txt")]
+
+
+@pytest.mark.parametrize("who", ["b", "boss"])
+def test_others_cannot_touch_workspace(fx, monkeypatch, who):
+    c, h = fx.c, getattr(fx, who)["headers"]
+    for p in _ws_forms(fx):
+        assert c.get("/api/files", params={"path": p}, headers=h).status_code == 403
+        assert c.get("/api/files/text", params={"path": p}, headers=h).status_code == 403
+        assert c.get("/api/files/raw", params={"path": p}, headers=h).status_code == 403
+        assert c.get("/api/files/raw", params={"path": p, "download": "true"}, headers=h).status_code == 403
+        assert c.get("/api/files/pdf", params={"path": p}, headers=h).status_code == 403
+    monkeypatch.setattr(files_api, "SOFFICE", None)   # 没装 LibreOffice：权限检查要先于 501
+    for p in _ws_forms(fx):
+        assert c.get("/api/files/pdf", params={"path": p}, headers=h).status_code == 403
+    for d in (f"ws{fx.a['id']}:会话1", str(fx.sub), f"ws{fx.a['id']}:", str(fx.sub.parent)):
+        assert c.get("/api/files", params={"path": d}, headers=h).status_code == 403
+        assert c.get("/api/files/search", params={"q": "秘密", "path": d}, headers=h).status_code == 403
+        assert c.put("/api/files/upload", params={"dir": d, "name": "新.txt"}, content=b"hi", headers=h).status_code == 403
+        assert c.post("/api/files/mkdir", json={"path": d, "name": "新夹"}, headers=h).status_code == 403
+    p = str(fx.sub / "秘密.txt")
+    assert c.post("/api/files/rename", json={"path": p, "name": "改.txt"}, headers=h).status_code == 403
+    r = c.post("/api/files/delete", json={"paths": [p, f"ws{fx.a['id']}:会话1/报价.docx"]}, headers=h).json()
+    assert r["deleted"] == [] and len(r["failed"]) == 2
+    assert (fx.sub / "秘密.txt").exists() and (fx.sub / "报价.docx").exists()
+    assert not (fx.sub / "新.txt").exists() and not (fx.sub / "新夹").exists()
+    # 用户不存在和无权返回一样的状态
+    assert c.get("/api/files", params={"path": "ws9999:"}, headers=h).status_code == 403
+
+
+def test_admin_cannot_enter_ws_root_or_trash(fx):
+    h = fx.boss["headers"]
+    for p in (str(store.WS_ROOT), str(store.TRASH), str(store.WS_ROOT / "没人的文件夹")):
+        store.TRASH.mkdir(exist_ok=True)
+        (store.WS_ROOT / "没人的文件夹").mkdir(exist_ok=True)
+        assert fx.c.get("/api/files", params={"path": p}, headers=h).status_code == 403
+        assert fx.c.get("/api/files/search", params={"q": "a", "path": p}, headers=h).status_code == 403
+
+
+def test_no_other_workspace_paths_in_responses(fx):
+    p = fx.c.get("/api/files", params={"path": "ws:"}, headers=fx.boss["headers"]).json()
+    assert p["entries"] == [] or all("ws" + str(fx.a["id"]) not in e["path"] for e in p["entries"])
+    ua = fx.ua
+    assert files_api.to_virtual(fx.sub / "秘密.txt", fx.boss | {"id": fx.boss["id"]}) == ""
+    assert files_api.crumbs_for(fx.sub, {"id": fx.b["id"]}) == [{"label": "文件库", "path": ""}]
+    assert files_api.to_virtual(fx.sub / "秘密.txt", {"id": ua["id"]}) == "ws:会话1/秘密.txt"
+
+
+def test_ws_root_hidden_in_library(fx, monkeypatch, tmp_path):
+    """工作区放在文件库里面时，根文件夹对所有人（含管理员）都不显示、搜索也不进入"""
+    ws = store.FILE_ROOT / "Projector工作区"
+    name = store.user_ws_dir(fx.ua, create=False).name
+    (ws / name / "会话1").mkdir(parents=True, exist_ok=True)
+    (ws / name / "会话1" / "独特文件名.txt").write_text("x")
+    (store.FILE_ROOT / "公共独特.txt").write_text("y")
+    monkeypatch.setattr(files_api, "WS_ROOT", ws.resolve())
+    monkeypatch.setattr(store, "WS_ROOT", ws.resolve())
+    monkeypatch.setattr(files_api, "TRASH", ws.resolve() / "回收站")
+    for who in (fx.a, fx.b, fx.boss):
+        r = fx.c.get("/api/files", params={"path": ""}, headers=who["headers"]).json()
+        names = [e["name"] for e in r["entries"]]
+        assert "Projector工作区" not in names and "公共独特.txt" in names
+        s = fx.c.get("/api/files/search", params={"q": "独特"}, headers=who["headers"]).json()["results"]
+        assert [x["name"] for x in s] == ["公共独特.txt"]
+        assert fx.c.get("/api/files", params={"path": "Projector工作区"}, headers=who["headers"]).status_code == 403
+    # 本人从 ws: 进自己的那份不受影响
+    r = fx.c.get("/api/files", params={"path": "ws:会话1"}, headers=fx.a["headers"])
+    assert r.status_code == 200 and [e["name"] for e in r.json()["entries"]] == ["独特文件名.txt"]
+
+
+def test_owner_can_use_own_workspace(fx, monkeypatch):
+    c, h = fx.c, fx.a["headers"]
+    assert [e["name"] for e in c.get("/api/files", params={"path": "ws:会话1"}, headers=h).json()["entries"]] == ["报价.docx", "秘密.txt"]
+    r = c.get("/api/files", params={"path": str(fx.sub)}, headers=h).json()
+    assert r["writable"] and r["crumbs"][0]["path"] == "ws:"
+    assert c.get("/api/files", params={"path": f"ws{fx.a['id']}:会话1"}, headers=h).status_code == 200
+    assert [x["name"] for x in c.get("/api/files/search", params={"q": "秘密", "path": "ws:"}, headers=h).json()["results"]] == ["秘密.txt"]
+    assert c.get("/api/files/text", params={"path": "ws:会话1/秘密.txt"}, headers=h).json()["text"].startswith("aaa")
+    assert c.get("/api/files/raw", params={"path": "ws:会话1/秘密.txt"}, headers=h).status_code == 200
+    monkeypatch.setattr(files_api, "SOFFICE", None)
+    assert c.get("/api/files/pdf", params={"path": "ws:会话1/报价.docx"}, headers=h).status_code == 501
+    assert c.put("/api/files/upload", params={"dir": "ws:会话1", "name": "新.txt"}, content=b"hi", headers=h).status_code == 200
+    assert c.post("/api/files/mkdir", json={"path": "ws:会话1", "name": "新夹"}, headers=h).status_code == 200
+    assert c.post("/api/files/rename", json={"path": "ws:会话1/新.txt", "name": "改.txt"}, headers=h).status_code == 200
+    r = c.post("/api/files/delete", json={"paths": ["ws:会话1/改.txt"]}, headers=h).json()
+    assert len(r["deleted"]) == 1 and not r["failed"]
+
+
+def _delete_own(fx, rel="ws:会话1/秘密.txt"):
+    r = fx.c.post("/api/files/delete", json={"paths": [rel]}, headers=fx.a["headers"]).json()
+    assert len(r["deleted"]) == 1
+    return r["deleted"][0]["id"]
+
+
+def test_trash_personal_item_views(fx):
+    tid = _delete_own(fx)
+    ra = fx.c.get("/api/trash", headers=fx.a["headers"]).json()["items"]
+    assert len(ra) == 1 and ra[0]["name"] == "秘密.txt" and ra[0]["personal"] and ra[0]["can_restore"]
+    assert ra[0]["owner_name"] == "张三"
+    # 普通用户 B 看不到，也不能恢复
+    assert fx.c.get("/api/trash", headers=fx.b["headers"]).json()["items"] == []
+    assert fx.c.post(f"/api/trash/{tid}/restore", headers=fx.b["headers"]).status_code == 404
+    # 管理员：脱敏
+    rb = fx.c.get("/api/trash", headers=fx.boss["headers"]).json()["items"]
+    assert len(rb) == 1
+    it = rb[0]
+    assert it["name"] == "（个人文件）" and it["personal"] and it["can_restore"] is False and it["owner_name"] == "张三"
+    assert it["orig_path"] == it["orig_virtual"] == it["trash_path"] == ""
+    assert "秘密" not in json.dumps(it, ensure_ascii=False) and "会话1" not in json.dumps(it, ensure_ascii=False)
+    r = fx.c.post(f"/api/trash/{tid}/restore", headers=fx.boss["headers"])
+    assert r.status_code == 403 and "只有本人能恢复" in r.json()["detail"]
+    assert fx.c.delete(f"/api/trash/{tid}", headers=fx.b["headers"]).status_code == 403
+    # A 自己恢复
+    r = fx.c.post(f"/api/trash/{tid}/restore", headers=fx.a["headers"])
+    assert r.status_code == 200 and (fx.sub / "秘密.txt").exists()
+
+
+def test_trash_admin_purge_personal_logs_masked(fx):
+    tid = _delete_own(fx)
+    assert fx.c.delete(f"/api/trash/{tid}", headers=fx.boss["headers"]).status_code == 200
+    assert store.db("SELECT 1 FROM trash WHERE id=?", (tid,), one=True) is None
+    last = store.db("SELECT * FROM file_ops WHERE action='彻底删除' ORDER BY id DESC", one=True)
+    assert last["path"] == "张三 的个人文件" and "秘密" not in last["path"]
+
+
+def test_trash_public_items_unchanged(fx):
+    f = store.FILE_ROOT / "公共.txt"
+    f.write_text("p")
+    r = fx.c.post("/api/files/delete", json={"paths": ["公共.txt"]}, headers=fx.b["headers"]).json()
+    tid = r["deleted"][0]["id"]
+    item = fx.c.get("/api/trash", headers=fx.b["headers"]).json()["items"][0]
+    assert item["name"] == "公共.txt" and not item["personal"] and item["can_restore"] and item["orig_path"]
+    # A 看不到 B 删的公共文件；管理员看得到原样的
+    assert fx.c.get("/api/trash", headers=fx.a["headers"]).json()["items"] == []
+    ai = fx.c.get("/api/trash", headers=fx.boss["headers"]).json()["items"][0]
+    assert ai["name"] == "公共.txt" and ai["orig_path"] and ai["can_restore"]
+    assert fx.c.post(f"/api/trash/{tid}/restore", headers=fx.a["headers"]).status_code == 404
+    assert fx.c.post(f"/api/trash/{tid}/restore", headers=fx.boss["headers"]).status_code == 200
+    assert f.exists()
+
+
+def test_admin_session_trash_restorable_by_owner(fx):
+    """管理员删了 A 的会话：工作区进回收站，A 能看到并恢复，管理员看到脱敏条目"""
+    sid = fx.c.post("/api/sessions", json={}, headers=fx.a["headers"]).json()["id"]
+    sess = store.db("SELECT * FROM sessions WHERE id=?", (sid,), one=True)
+    ws = store.session_workspace(sess)
+    (ws / "x.txt").write_text("x")
+    assert fx.c.delete(f"/api/sessions/{sid}", headers=fx.boss["headers"]).status_code == 200
+    ia = [i for i in fx.c.get("/api/trash", headers=fx.a["headers"]).json()["items"] if i["personal"]]
+    assert len(ia) == 1 and ia[0]["can_restore"] and "删除会话" in ia[0]["reason"]
+    ib = [i for i in fx.c.get("/api/trash", headers=fx.boss["headers"]).json()["items"] if i["personal"]]
+    assert ib[0]["name"] == "（个人文件）" and ib[0]["reason"] == "删除" and not ib[0]["can_restore"]
+    assert fx.c.post(f"/api/trash/{ia[0]['id']}/restore", headers=fx.a["headers"]).status_code == 200
+
+
+def test_links_for_admin_viewing_others_session(fx):
+    sid = fx.c.post("/api/sessions", json={}, headers=fx.a["headers"]).json()["id"]
+    lk = fx.c.post(f"/api/sessions/{sid}/links", json={"name": "本机"}, headers=fx.a["headers"]).json()
+    root = Path(lk["abs"])
+    (root / "机密名.txt").write_text("z")
+    assert fx.c.post(f"/api/sessions/{sid}/links/{lk['id']}/snapshot", headers=fx.a["headers"]).status_code == 200
+    (root / "新增机密.txt").write_text("z")
+    own = fx.c.get(f"/api/sessions/{sid}/links", headers=fx.a["headers"]).json()
+    assert len(own) == 1
+    assert fx.c.get(f"/api/sessions/{sid}/links", headers=fx.boss["headers"]).json() == []
+    r = fx.c.get(f"/api/sessions/{sid}/links/{lk['id']}/changes", headers=fx.boss["headers"])
+    assert r.status_code == 403 and "机密" not in r.text
+    ch = fx.c.get(f"/api/sessions/{sid}/links/{lk['id']}/changes", headers=fx.a["headers"]).json()
+    assert [x["rel"] for x in ch["added"]] == ["新增机密.txt"]
+
+
+def test_workspace_usage(fx, make_user):
+    make_user("nows", display_name="没工作区")   # 没建工作区的用户记 0
+    r = fx.c.get("/api/admin/workspace-usage", headers=fx.boss["headers"])
+    assert r.status_code == 200
+    body = r.json()
+    by = {u["username"]: u for u in body["users"]}
+    assert by["zhang"]["size"] == 1300 and by["zhang"]["files"] == 2 and by["zhang"]["display_name"] == "张三"
+    assert by["nows"]["size"] == 0 and by["nows"]["files"] == 0
+    assert not (store.WS_ROOT / by["nows"]["username"]).exists()
+    assert set(body["trash"]) == {"size", "files"}
+    assert "秘密" not in r.text and "会话1" not in r.text
+    assert fx.c.get("/api/admin/workspace-usage", headers=fx.b["headers"]).status_code == 403
+    tid = _delete_own(fx)
+    tb = fx.c.get("/api/admin/workspace-usage", headers=fx.boss["headers"]).json()["trash"]
+    assert tb["size"] == 1000 and tb["files"] == 1 and tid
+
+
+def test_file_ops_masked_for_admin(fx):
+    c = fx.c
+    c.put("/api/files/upload", params={"dir": "ws:会话1", "name": "n.txt"}, content=b"hi", headers=fx.a["headers"])
+    c.put("/api/files/upload", params={"dir": "", "name": "pub.txt"}, content=b"hi", headers=fx.b["headers"])
+    tid = _delete_own(fx)
+    c.delete(f"/api/trash/{tid}", headers=fx.boss["headers"])
+    ops = c.get("/api/admin/file-ops", headers=fx.boss["headers"]).json()
+    text = json.dumps(ops, ensure_ascii=False)
+    assert "秘密" not in text and "n.txt" not in text and "会话1" not in text
+    assert any(o["path"] == "张三 的个人文件" and o["detail"] == "" for o in ops)
+    assert any(o["path"].endswith("pub.txt") for o in ops)   # 公共文件库的记录不变
+    # 管理员自己的工作区记录保持原样
+    store.log_file_op(store.get_user(fx.boss["id"]), "上传", store.user_ws_dir(store.get_user(fx.boss["id"])) / "我的.txt")
+    ops = c.get("/api/admin/file-ops", headers=fx.boss["headers"]).json()
+    assert ops[0]["path"].endswith("我的.txt")
+
+
+def test_internal_read_document_cannot_read_other_workspace(fx):
+    """管理员的 Claude（以会话主人身份）读不了 A 的工作区；自己的可以"""
+    sid = fx.c.post("/api/sessions", json={}, headers=fx.boss["headers"]).json()["id"]
+    h = {"Authorization": f"Bearer {store.INTERNAL_TOKEN}"}
+    r = fx.c.post("/api/internal/kb/doc", json={"session_id": sid, "path": str(fx.sub / "秘密.txt")}, headers=h)
+    assert r.status_code == 403
+    r = fx.c.post("/api/internal/kb/doc", json={"session_id": sid, "path": f"ws{fx.a['id']}:会话1/秘密.txt"}, headers=h)
+    assert r.status_code == 403
+    mine = store.user_ws_dir(store.get_user(fx.boss["id"])) / "我的.txt"
+    mine.write_text("老板的", encoding="utf-8")
+    r = fx.c.post("/api/internal/kb/doc", json={"session_id": sid, "path": str(mine)}, headers=h)
+    assert r.status_code == 200 and "老板的" in r.json()["text"]
+
+
+def test_internal_user_is_not_a_backdoor(fx):
+    with pytest.raises(HTTPException) as e:
+        files_api.resolve_path(str(fx.sub / "秘密.txt"), store.INTERNAL)
+    assert e.value.status_code == 403
+    with pytest.raises(HTTPException) as e:
+        files_api.resolve_path("ws:", store.INTERNAL)
+    assert e.value.status_code == 403

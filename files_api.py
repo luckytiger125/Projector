@@ -2,9 +2,10 @@
 
 路径写法（网页和接口之间）：
   "合同/2026/a.docx"        文件库（D 盘）里的相对路径
-  "ws:2026-10-24 周报/a.xlsx" 自己的工作区；管理员可以用 "ws<用户id>:" 看别人的
+  "ws:2026-10-24 周报/a.xlsx" 自己的工作区（只有本人能进，管理员也不例外）
   也接受完整路径（D:\\合同\\a.docx），会自动换算
-工作区在 D:\\Projector工作区\\<显示名(用户名)>\\<日期 会话标题>\\，别人的工作区和回收站普通用户进不去。
+工作区在 D:\\Projector工作区\\<显示名(用户名)>\\<日期 会话标题>\\，别人的工作区、工作区根目录和回收站所有人（含管理员）都进不去。
+管理员在网页上只能看到每个人工作区的占用空间（/api/admin/workspace-usage），看不到里面的文件名和内容。
 """
 import asyncio
 import hashlib
@@ -53,10 +54,11 @@ def _ws_owner_of(p: Path) -> int | None:
 
 
 def _check(target: Path, user: dict) -> Path:
-    """能不能看：系统数据不让碰；工作区只能看自己的；回收站和工作区根目录只有管理员能看。"""
+    """能不能看：系统数据不让碰；工作区只有主人能进（管理员、内部用户也不例外）；
+    工作区根目录、回收站、不属于任何人的子目录对所有人都是 403。"""
     if _within(target, WS_ROOT):
         owner = _ws_owner_of(target)
-        if not is_admin(user) and owner != user["id"]:
+        if owner is None or owner != user["id"]:
             raise HTTPException(403, "只能访问自己的工作区")
         return target
     if _within(target, DATA_DIR):
@@ -81,9 +83,10 @@ def _check_write(target: Path, user: dict) -> Path:
 def resolve_path(path: str, user: dict, must_exist: bool = True) -> Path:
     raw = (path or "").strip().strip('"')
     if m := _WS_RE.match(raw):
-        u = get_user(int(m.group(1))) if m.group(1) else user
-        if not u:
-            raise HTTPException(404, "没有这个用户")
+        # ws<id>: 只接受本人的 id；别人的、不存在的一律 403，不泄露用户是否存在
+        if (m.group(1) and int(m.group(1)) != user["id"]) or user.get("role") == "internal":
+            raise HTTPException(403, "只能访问自己的工作区")
+        u = user
         target = (user_ws_dir(u) / m.group(2).lstrip("/\\")).resolve()
     elif Path(raw).is_absolute():
         target = Path(raw).resolve()
@@ -96,24 +99,25 @@ def resolve_path(path: str, user: dict, must_exist: bool = True) -> Path:
 
 
 def to_virtual(p: Path, user: dict) -> str:
-    owner = _ws_owner_of(p)
-    if owner is not None:
-        rest = "/".join(p.relative_to(WS_ROOT).parts[1:])
-        return f"ws:{rest}" if owner == user["id"] else f"ws{owner}:{rest}"
+    """网页路径；别人的工作区、工作区根和回收站不生成路径（返回空串）"""
+    if _within(p, WS_ROOT):
+        owner = _ws_owner_of(p)
+        if owner is None or owner != user["id"]:
+            return ""
+        return "ws:" + "/".join(p.relative_to(WS_ROOT).parts[1:])
     if _within(p, FILE_ROOT):
         return "" if p == FILE_ROOT else p.relative_to(FILE_ROOT).as_posix()
     return str(p)
 
 
 def crumbs_for(p: Path, user: dict) -> list[dict]:
-    owner = _ws_owner_of(p)
-    if owner is not None:
+    if _within(p, WS_ROOT):
+        if _ws_owner_of(p) != user["id"]:
+            return [{"label": "文件库", "path": ""}]   # 别人的不生成可点的路径
         parts = p.relative_to(WS_ROOT).parts
-        prefix = "ws:" if owner == user["id"] else f"ws{owner}:"
-        label = "我的工作区" if owner == user["id"] else ((get_user(owner) or {}).get("display_name", "") + " 的工作区")
-        out = [{"label": label, "path": prefix}]
+        out = [{"label": "我的工作区", "path": "ws:"}]
         for i, part in enumerate(parts[1:], start=1):
-            out.append({"label": part, "path": prefix + "/".join(parts[1:i + 1])})
+            out.append({"label": part, "path": "ws:" + "/".join(parts[1:i + 1])})
         return out
     # 根目录是整个盘（D:\）就直接显示盘符，否则显示“文件库”，免得长路径把后面挤掉
     out = [{"label": str(FILE_ROOT) if FILE_ROOT.parent == FILE_ROOT else "文件库", "path": ""}]
@@ -140,7 +144,6 @@ def entry_info(p: Path, user: dict, st=None) -> dict:
 
 def list_dir(d: Path, user: dict, limit: int = 3000) -> list[dict]:
     items = []
-    admin = is_admin(user)
     try:
         with os.scandir(d) as it:
             for e in it:
@@ -150,9 +153,9 @@ def list_dir(d: Path, user: dict, limit: int = 3000) -> list[dict]:
                     p = Path(e.path)
                     if e.name.lower() == "data" and p.resolve() == DATA_DIR:
                         continue  # 项目在 D 盘里时，不显示系统数据文件夹
-                    if p == WS_ROOT and not admin:
-                        continue  # 普通用户从“我的工作区”进自己的那份
-                    if d == WS_ROOT and not admin and ws_owner(e.name) != user["id"]:
+                    if p == WS_ROOT:
+                        continue  # 所有人（含管理员）都从“我的工作区”进自己的那份
+                    if d == WS_ROOT and ws_owner(e.name) != user["id"]:
                         continue
                     items.append(entry_info(p, user, e.stat()))
                 except OSError:
@@ -195,7 +198,6 @@ def files_search(q: str, path: str = "", user: dict = Depends(current_user)):
     base, words = resolve_path(path, user), q.lower().split()
     if not words:
         return {"results": [], "partial": False}
-    admin = is_admin(user)
     results, end, partial = [], time.time() + 8, False
     for dirpath, dirnames, filenames in os.walk(base):
         here = Path(dirpath)
@@ -204,7 +206,7 @@ def files_search(q: str, path: str = "", user: dict = Depends(current_user)):
             full = (here / n)
             if n.lower() in HIDDEN_NAMES or n.startswith(".") or full.resolve() == DATA_DIR:
                 continue
-            if not admin and (full == WS_ROOT or (here == WS_ROOT and ws_owner(n) != user["id"])):
+            if full == WS_ROOT or (here == WS_ROOT and ws_owner(n) != user["id"]):
                 continue
             keep.append(n)
         dirnames[:] = keep
@@ -249,9 +251,9 @@ def files_text(path: str, user: dict = Depends(current_user)):
 @router.get("/api/files/pdf")
 async def files_pdf(path: str, user: dict = Depends(current_user)):
     """用 LibreOffice 把 Office 文件转成 PDF 预览，按修改时间缓存。"""
+    target = resolve_path(path, user)   # 先查权限，再谈有没有装 LibreOffice
     if not SOFFICE:
         raise HTTPException(501, "台式机没装 LibreOffice，这种文件不能预览")
-    target = resolve_path(path, user)
     st = target.stat()
     key = uuid.uuid5(uuid.NAMESPACE_URL, f"{target}|{st.st_mtime_ns}|{st.st_size}").hex
     cache = DATA / "preview"
@@ -437,21 +439,51 @@ def files_delete(body: DeleteBody, user: dict = Depends(current_user)):
 
 # ---------- 回收站 ----------
 
+def _personal_owner(orig_path: str) -> tuple[bool, int | None]:
+    """回收站条目是不是个人文件（原位置在工作区里），以及主人是谁（查不到为 None）"""
+    p = Path(orig_path)
+    if not _within(p, WS_ROOT):
+        return False, None
+    return True, _ws_owner_of(p)
+
+
+def _owner_name(owner: int | None) -> str:
+    return ((get_user(owner) or {}).get("display_name", "") if owner is not None else "")
+
+
+def _trash_visible(row: dict, user: dict) -> bool:
+    personal, owner = _personal_owner(row["orig_path"])
+    if personal:
+        return owner == user["id"] or (is_admin(user) and user.get("role") != "internal")
+    return is_admin(user) or row["deleted_by"] == user["id"]
+
+
 @router.get("/api/trash")
 def trash_list(user: dict = Depends(current_user)):
     purge_trash()
-    sql = "SELECT t.*, u.display_name AS who FROM trash t LEFT JOIN users u ON u.id=t.deleted_by"
-    rows = db(sql + " ORDER BY t.deleted_at DESC") if is_admin(user) else \
-        db(sql + " WHERE t.deleted_by=? ORDER BY t.deleted_at DESC", (user["id"],))
+    rows = db("SELECT t.*, u.display_name AS who FROM trash t LEFT JOIN users u ON u.id=t.deleted_by "
+              "ORDER BY t.deleted_at DESC")
+    items = []
     for r in rows:
+        if not _trash_visible(r, user):
+            continue
+        personal, owner = _personal_owner(r["orig_path"])
+        r["personal"], r["owner_name"] = personal, _owner_name(owner) if personal else ""
+        r["can_restore"] = owner == user["id"] if personal else True
         r["days_left"] = max(0, TRASH_DAYS - int((time.time() - r["deleted_at"]) // 86400))
-        r["orig_virtual"] = to_virtual(Path(r["orig_path"]), user) if _within(Path(r["orig_path"]), FILE_ROOT) or _within(Path(r["orig_path"]), WS_ROOT) else r["orig_path"]
-    return {"items": rows, "days": TRASH_DAYS}
+        if personal and owner != user["id"]:
+            # 管理员看别人的个人条目：只看得到有这么一项，看不到名字和位置
+            r.update(name="（个人文件）", orig_path="", orig_virtual="", trash_path="", reason="删除")
+        else:
+            op = Path(r["orig_path"])
+            r["orig_virtual"] = to_virtual(op, user) if _within(op, FILE_ROOT) or _within(op, WS_ROOT) else r["orig_path"]
+        items.append(r)
+    return {"items": items, "days": TRASH_DAYS}
 
 
 def _trash_item(tid: str, user: dict) -> dict:
     row = db("SELECT * FROM trash WHERE id=?", (tid,), one=True)
-    if not row or (not is_admin(user) and row["deleted_by"] != user["id"]):
+    if not row or not _trash_visible(row, user):
         raise HTTPException(404, "回收站里没有这个文件")
     return row
 
@@ -459,6 +491,9 @@ def _trash_item(tid: str, user: dict) -> dict:
 @router.post("/api/trash/{tid}/restore")
 def trash_restore(tid: str, user: dict = Depends(current_user)):
     row = _trash_item(tid, user)
+    personal, owner = _personal_owner(row["orig_path"])
+    if personal and owner != user["id"]:
+        raise HTTPException(403, "这是别人的个人文件，只有本人能恢复")
     src, orig = Path(row["trash_path"]), Path(row["orig_path"])
     if not src.exists():
         db("DELETE FROM trash WHERE id=?", (tid,))
@@ -478,16 +513,53 @@ def trash_restore(tid: str, user: dict = Depends(current_user)):
 @router.delete("/api/trash/{tid}")
 def trash_purge_one(tid: str, admin: dict = Depends(require_admin)):
     row = _trash_item(tid, admin)
+    personal, owner = _personal_owner(row["orig_path"])
     shutil.rmtree(Path(row["trash_path"]).parent, ignore_errors=True)
     db("DELETE FROM trash WHERE id=?", (tid,))
-    log_file_op(admin, "彻底删除", row["orig_path"])
+    if personal and owner != admin["id"]:
+        shown = f"{_owner_name(owner)} 的个人文件" if owner is not None and _owner_name(owner) else "个人文件"
+    else:
+        shown = row["orig_path"]
+    log_file_op(admin, "彻底删除", shown)
     return {"ok": True}
 
 
 @router.get("/api/admin/file-ops")
 def file_ops(limit: int = 300, admin: dict = Depends(require_admin)):
-    return db("SELECT f.*, u.display_name AS who, u.avatar, u.id AS uid, u.role FROM file_ops f "
+    rows = db("SELECT f.*, u.display_name AS who, u.avatar, u.id AS uid, u.role FROM file_ops f "
               "LEFT JOIN users u ON u.id=f.user_id ORDER BY f.id DESC LIMIT ?", (min(limit, 2000),))
+    for r in rows:
+        p = Path(r["path"] or "")
+        if _within(p, WS_ROOT) and _ws_owner_of(p) != admin["id"]:   # 别人的工作区、回收站：不给路径和详情
+            name = _owner_name(_ws_owner_of(p))
+            r["path"], r["detail"] = (f"{name} 的个人文件" if name else "个人文件"), ""
+    return rows
+
+
+def _dir_usage(root: Path) -> tuple[int, int]:
+    """文件夹的总字节数和文件数；只统计，单个文件 stat 失败就跳过"""
+    size = files = 0
+    for _dp, _dn, names in os.walk(root):
+        for n in names:
+            try:
+                size += os.stat(os.path.join(_dp, n), follow_symlinks=False).st_size
+                files += 1
+            except OSError:
+                continue
+    return size, files
+
+
+@router.get("/api/admin/workspace-usage")
+def workspace_usage(_: dict = Depends(require_admin)):
+    """每个人工作区占的空间和文件数（只统计，不返回任何文件名或路径），外加回收站合计"""
+    out = []
+    for u in db("SELECT id, display_name, username FROM users ORDER BY id"):
+        d = user_ws_dir(u, create=False)
+        size, files = _dir_usage(d) if d.is_dir() else (0, 0)
+        out.append({"user_id": u["id"], "display_name": u["display_name"], "username": u["username"],
+                    "size": size, "files": files})
+    ts, tf = _dir_usage(TRASH) if TRASH.is_dir() else (0, 0)
+    return {"users": out, "trash": {"size": ts, "files": tf}}
 
 
 # ---------- 工作区：同事本机的文件上传到这里，处理完再同步回去 ----------
@@ -510,12 +582,14 @@ def link_view(row: dict, sess: dict, user: dict) -> dict:
 
 def _owner_only(sess: dict, user: dict) -> None:
     if sess["user_id"] != user["id"]:
-        raise HTTPException(403, "只有会话的主人能上传文件")
+        raise HTTPException(403, "只有会话的主人能操作这些文件")
 
 
 @router.get("/api/sessions/{sid}/links")
 def links_list(sid: str, user: dict = Depends(current_user)):
     sess = session_for(sid, user)
+    if sess["user_id"] != user["id"]:
+        return []   # 管理员看别人的会话时不带出别人工作区里的路径
     rows = db("SELECT * FROM links WHERE session_id=? ORDER BY created", (sid,))
     return [link_view(r, sess, user) for r in rows]
 
@@ -593,6 +667,7 @@ def links_snapshot(sid: str, lid: str, user: dict = Depends(current_user)):
 @router.get("/api/sessions/{sid}/links/{lid}/changes")
 def links_changes(sid: str, lid: str, user: dict = Depends(current_user)):
     sess = session_for(sid, user)
+    _owner_only(sess, user)
     row, root = _link(sess, lid)
     old = json.loads(row["manifest"] or "{}")
     now = _scan(root)

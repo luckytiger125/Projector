@@ -37,7 +37,8 @@
   // ---------- 用户 ----------
 
   async function renderUsers() {
-    const [all, subs] = await Promise.all([api("/api/admin/sessions"), refreshPending()]);
+    const [all, subs, usage] = await Promise.all([api("/api/admin/sessions"), refreshPending(),
+      api("/api/admin/workspace-usage").catch(() => null)]);
     const today = new Date(new Date().toDateString()) / 1000;
     const people = users;
     const stats = [
@@ -69,7 +70,12 @@
         <td style="white-space:nowrap;text-align:right">
           <button class="btn small ghost" data-act="reset">${icon("key", 14)}重置密码</button>
           ${u.id === me.id ? "" : `<button class="btn small ghost danger" data-act="delete">${icon("trash", 14)}</button>`}</td>
-      </tr>`).join("")}</table>`;
+      </tr>`).join("")}</table>
+      ${usage ? `<div class="card" style="margin-top:16px"><h4>${icon("folder", 16)}工作区占用空间</h4>
+        <div class="muted" style="font-size:12.5px;margin-bottom:6px">个人文件只有本人能看，这里只显示占用空间，不显示文件名和内容。</div>
+        <table class="grid"><tr><th>用户</th><th>占用空间</th><th>文件数</th></tr>
+        ${usage.users.map(x => `<tr><td>${esc(x.display_name)} <span class="muted">@${esc(x.username)}</span></td><td>${fsize(x.size)}</td><td>${x.files}</td></tr>`).join("")}
+        <tr><td class="muted">回收站（合计）</td><td>${fsize(usage.trash.size)}</td><td>${usage.trash.files}</td></tr></table></div>` : ""}`;
     box().querySelectorAll("[data-count]").forEach(el => countUp(el, +el.dataset.count));
     $("nuBtn").onclick = async () => {
       try {
