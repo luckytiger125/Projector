@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 import files_api
-from runner import DEFAULT_ASK_CMDS, DEFAULT_BASH_ALLOW, RUNS, SAFE_BASH, perm_mode
+from runner import DEFAULT_ASK_CMDS, DEFAULT_BASH_ALLOW, RUNS, SAFE_BASH, dispatch_queue, max_concurrent, perm_mode
 from store import (AVATARS, DATA, PORT, VERSION, adopt_orphans, can_bypass, check_password, current_user, db, first_admin,
                    get_setting, get_user, hash_password, is_local, issue_token, require_admin, set_setting, user_public,
                    user_ws_dir)
@@ -200,6 +200,7 @@ class SettingsBody(BaseModel):
     perm_mode: str | None = None
     bash_allow: list[str] | None = None
     ask_cmds: list[str] | None = None
+    max_concurrent: int | None = None   # 同时运行的 Claude 进程数，1~16
 
 
 def _clean_cmds(cmds: list[str]) -> list[str]:
@@ -215,15 +216,21 @@ def _clean_cmds(cmds: list[str]) -> list[str]:
 def admin_get_settings(admin: dict = Depends(require_admin)):
     return {"perm_mode": perm_mode(), "bash_allow": get_setting("bash_allow", DEFAULT_BASH_ALLOW),
             "ask_cmds": get_setting("ask_cmds", DEFAULT_ASK_CMDS), "safe": [r[5:-1] for r in SAFE_BASH],
-            "default_ask": DEFAULT_ASK_CMDS, "default_allow": DEFAULT_BASH_ALLOW}
+            "default_ask": DEFAULT_ASK_CMDS, "default_allow": DEFAULT_BASH_ALLOW,
+            "max_concurrent": max_concurrent()}
 
 
 @router.put("/api/admin/settings")
-def admin_put_settings(body: SettingsBody, admin: dict = Depends(require_admin)):
+async def admin_put_settings(body: SettingsBody, admin: dict = Depends(require_admin)):
+    if body.max_concurrent is not None and not 1 <= body.max_concurrent <= 16:
+        raise HTTPException(400, "同时运行的任务数要在 1 到 16 之间")
     if body.perm_mode in ("standard", "strict"):
         set_setting("perm_mode", body.perm_mode)
     if body.bash_allow is not None:
         set_setting("bash_allow", _clean_cmds(body.bash_allow))
     if body.ask_cmds is not None:
         set_setting("ask_cmds", _clean_cmds(body.ask_cmds))
+    if body.max_concurrent is not None:
+        set_setting("max_concurrent", body.max_concurrent)
+        dispatch_queue()   # 调大上限后，排着的消息马上有位置
     return admin_get_settings(admin)

@@ -175,6 +175,12 @@ _db.executescript(
         hits INTEGER DEFAULT 0,
         created REAL,
         used REAL);
+    CREATE TABLE IF NOT EXISTS active_runs (
+        session_id TEXT PRIMARY KEY, user_id INTEGER, started REAL);
+    CREATE TABLE IF NOT EXISTS turn_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, author_id INTEGER, text TEXT,
+        refs TEXT, skill TEXT, action TEXT, created REAL);
+    CREATE INDEX IF NOT EXISTS idx_turn_queue_session ON turn_queue(session_id);
     """
 )
 for _table, _col in (("sessions", "bypass INTEGER DEFAULT 0"), ("sessions", "created_by TEXT DEFAULT ''"),

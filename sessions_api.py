@@ -12,7 +12,7 @@ import sections
 import skills_api
 from approvals import approval_public, pending_for, questions_for
 from events import broadcast, push_session
-from runner import KB_ACTIONS, RUNS, start_turn
+from runner import KB_ACTIONS, RUNS, submit_turn
 from store import (CLAUDE_HOME, DATA, FILE_ROOT, avatar_of, can_bypass, current_user, db, get_user, require_admin,
                    session_for, session_workspace)
 
@@ -22,8 +22,8 @@ router = APIRouter()
 # ---------- 会话 ----------
 
 def session_stats(sids: list[str]) -> dict[str, dict]:
-    """一次查询补齐一批会话的消息数、最后一轮结果、文件数（列表里不能逐会话查库）。"""
-    out = {sid: {"message_count": 0, "last": None, "file_count": 0} for sid in sids}
+    """一次查询补齐一批会话的消息数、最后一轮结果、文件数、排队中的消息（列表里不能逐会话查库）。"""
+    out = {sid: {"message_count": 0, "last": None, "file_count": 0, "queue": []} for sid in sids}
     for i in range(0, len(sids), 500):
         chunk = sids[i:i + 500]
         ph = ",".join("?" * len(chunk))
@@ -36,6 +36,10 @@ def session_stats(sids: list[str]) -> dict[str, dict]:
             except ValueError:
                 meta = {}
             out[r["session_id"]]["last"] = {"role": r["role"], "meta": meta if isinstance(meta, dict) else {}}
+        for r in db("SELECT q.id, q.session_id, q.text, q.created, u.display_name FROM turn_queue q "
+                    f"LEFT JOIN users u ON u.id=q.author_id WHERE q.session_id IN ({ph}) ORDER BY q.created, q.id", chunk):
+            out[r["session_id"]]["queue"].append({"id": r["id"], "text": r["text"],
+                                                  "author_name": r["display_name"] or "", "created": r["created"]})
         for r in db(f"SELECT session_id, manifest FROM links WHERE session_id IN ({ph})", chunk):
             try:
                 m = json.loads(r["manifest"] or "{}")
@@ -55,6 +59,8 @@ def session_view(s: dict, stats: dict | None = None) -> dict:
         status = "pending"
     elif running:
         status = "running"
+    elif st["queue"]:
+        status = "queued"   # 没在运行，但有消息在排队（等空位）
     elif not st["message_count"]:
         status = "idle"   # 还没发过消息；前端据此显示“未开始”
     elif last and (last["role"] == "error" or any(last["meta"].get(k) for k in ("stopped", "timed_out", "error"))):
@@ -70,7 +76,7 @@ def session_view(s: dict, stats: dict | None = None) -> dict:
             "section_name": sections.section_name(s.get("section_id")),
             "section_archived": bool((sections.get_section(s.get("section_id")) or {}).get("archived")),
             "status": status, "duration_seconds": duration,
-            "message_count": st["message_count"], "file_count": st["file_count"]}
+            "message_count": st["message_count"], "file_count": st["file_count"], "queue": st["queue"]}
 
 
 def session_views(rows: list[dict]) -> list[dict]:
@@ -210,6 +216,7 @@ def delete_session(sid: str, user: dict = Depends(current_user)):
     db("DELETE FROM messages WHERE session_id=?", (sid,))
     db("DELETE FROM sessions WHERE id=?", (sid,))
     db("DELETE FROM links WHERE session_id=?", (sid,))
+    db("DELETE FROM turn_queue WHERE session_id=?", (sid,))
     ws = session_workspace(s, create=False)
     if ws and ws.exists():
         files_api.move_to_trash(ws, user, f"删除会话 {s['title']}")
@@ -242,7 +249,9 @@ async def send_message(sid: str, body: Send, user: dict = Depends(current_user))
         raise HTTPException(403, "你没有这个技能的使用权限")
     if s["title"] == "新会话":
         db("UPDATE sessions SET title=? WHERE id=?", (text[:20], sid))
-    await start_turn(s, text, user, refs, skill, body.action)
+    res = submit_turn(s, text, user, refs, skill, body.action)
+    if res["queued"]:
+        return {"queued": True, "queue_id": res["queue_id"], "position": res["position"]}
     return {"ok": True}
 
 

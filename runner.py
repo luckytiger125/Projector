@@ -18,8 +18,8 @@ import skills_api
 import usage
 from approvals import APPROVAL_TIMEOUT, pending_for, questions_for
 from events import add_message, broadcast, push_session
-from store import (BASE, DATA, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, can_bypass, current_user, db, find_claude,
-                   get_setting, get_user, posix_rule_path, session_for, session_workspace, user_ws_dir)
+from store import (BASE, DATA, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, can_bypass, current_user, db, db_insert,
+                   find_claude, get_setting, get_user, jdump, posix_rule_path, session_for, session_workspace, user_ws_dir)
 
 router = APIRouter()
 
@@ -315,8 +315,9 @@ def build_prompt(text: str, refs: list[str], skill: str) -> str:
     return ("\n\n".join(head) + "\n\n" + text) if head else text
 
 
-async def start_turn(sess: dict, text: str, author: dict, refs: list[str] | None = None, skill: str = "",
-                     action: str = "") -> Run:
+def _begin_turn(sess: dict, text: str, author: dict, refs: list[str] | None = None, skill: str = "",
+                action: str = "") -> Run:
+    """立刻开始一轮（同步函数、中间没有 await：登记 RUNS 和启动任务之间不会被别的协程插进来）。必须在事件循环线程里调用。"""
     claude_bin = find_claude()
     if not claude_bin:
         raise HTTPException(500, "台式机上找不到 claude 命令：请先安装 Claude Code，或在 config.bat 里设置 CLAUDE_BIN")
@@ -342,6 +343,8 @@ async def start_turn(sess: dict, text: str, author: dict, refs: list[str] | None
     if action:
         meta["kb"] = action
     try:
+        db("INSERT OR REPLACE INTO active_runs (session_id, user_id, started) VALUES (?,?,?)",
+           (sid, sess["user_id"], time.time()))
         add_message(sid, "user", text, meta)
         cmd = build_command(claude_bin, sess, owner, extra)
         action_text = KB_ACTIONS[action][1] if action else text
@@ -353,9 +356,114 @@ async def start_turn(sess: dict, text: str, author: dict, refs: list[str] | None
         prompt = build_prompt(action_text, refs, skill)
     except Exception:
         RUNS.pop(sid, None)  # 任何一步失败都要清掉，否则会话一直显示“进行中”
+        _clear_active(sid)
         raise
     asyncio.create_task(_drive(run, prompt, cmd, cwd))
     return run
+
+
+async def start_turn(sess: dict, text: str, author: dict, refs: list[str] | None = None, skill: str = "",
+                     action: str = "") -> Run:
+    return _begin_turn(sess, text, author, refs, skill, action)
+
+
+# ---------- 排队：全局并发上限 + 每个会话的待发队列 ----------
+
+QUEUE_CAP = 5   # 每个会话最多排几条
+DEFAULT_MAX_CONCURRENT = 3
+
+
+def max_concurrent() -> int:
+    """同时运行的 Claude 进程数上限：管理员设置 > 环境变量 MAX_CONCURRENT > 3；限制在 1~16。"""
+    try:
+        default = int(os.environ.get("MAX_CONCURRENT") or DEFAULT_MAX_CONCURRENT)
+    except ValueError:
+        default = DEFAULT_MAX_CONCURRENT
+    try:
+        n = int(get_setting("max_concurrent", default))
+    except (TypeError, ValueError):
+        n = default
+    return max(1, min(16, n))
+
+
+def _clear_active(sid: str) -> None:
+    try:
+        db("DELETE FROM active_runs WHERE session_id=?", (sid,))
+    except Exception:
+        usage.log_failure(sid, "active_runs")
+
+
+def queue_of(sid: str) -> list[dict]:
+    return db("SELECT * FROM turn_queue WHERE session_id=? ORDER BY created, id", (sid,))
+
+
+def clear_queue(sid: str) -> list[dict]:
+    """清空某个会话的队列，返回被清掉的条目（调用方负责把文字记进会话，免得用户打的字悄悄丢了）。"""
+    rows = queue_of(sid)
+    if rows:
+        db("DELETE FROM turn_queue WHERE session_id=?", (sid,))
+    return rows
+
+
+def cancelled_note(rows: list[dict], why: str) -> str:
+    return f"{why}，排队中的 {len(rows)} 条消息已取消，内容如下：\n" + "\n".join(f"{i}. {r['text']}" for i, r in enumerate(rows, 1))
+
+
+def submit_turn(sess: dict, text: str, author: dict, refs: list[str] | None = None, skill: str = "",
+                action: str = "") -> dict:
+    """发消息的统一入口（必须在事件循环线程里调用）：有空位就立刻开始，否则排队。
+    返回 {"queued": False, "run": Run} 或 {"queued": True, "queue_id": 条目 id, "position": 在本会话队列里的第几位}。"""
+    sid = sess["id"]
+    waiting = queue_of(sid)
+    if sid not in RUNS and len(RUNS) < max_concurrent() and not waiting:
+        return {"queued": False, "run": _begin_turn(sess, text, author, refs, skill, action)}
+    if len(waiting) >= QUEUE_CAP:
+        raise HTTPException(409, f"这个会话已经排了 {QUEUE_CAP} 条消息，请等前面的完成，或先取消几条")
+    qid = db_insert("INSERT INTO turn_queue (session_id, author_id, text, refs, skill, action, created) VALUES (?,?,?,?,?,?,?)",
+                    (sid, author["id"], text, jdump(refs or []), skill or "", action or "", time.time()))
+    push_session(sid)
+    dispatch_queue()
+    return {"queued": True, "queue_id": qid, "position": len(waiting) + 1}
+
+
+def dispatch_queue() -> None:
+    """有空位就从队列里取最早的、所在会话没在运行的一条开始。整个函数没有 await，读队列、删条目、登记 RUNS 一气呵成，
+    所以两个任务同时结束也不会重复启动同一条或超过上限。必须在事件循环线程里调用。"""
+    while len(RUNS) < max_concurrent():
+        item = next((r for r in db("SELECT * FROM turn_queue ORDER BY created, id") if r["session_id"] not in RUNS), None)
+        if not item:
+            return
+        db("DELETE FROM turn_queue WHERE id=?", (item["id"],))
+        sid = item["session_id"]
+        sess = db("SELECT * FROM sessions WHERE id=?", (sid,), one=True)
+        if not sess:
+            continue   # 会话已经被删了，这条直接丢掉
+        try:
+            author = get_user(item["author_id"]) or get_user(sess["user_id"])
+            if not author:
+                raise HTTPException(400, "找不到发这条消息的账号")
+            _begin_turn(sess, item["text"], author, json.loads(item["refs"] or "[]"), item["skill"] or "", item["action"] or "")
+        except Exception as e:
+            reason = e.detail if isinstance(e, HTTPException) else str(e)
+            try:
+                add_message(sid, "error", f"排队的消息没能开始：{reason}\n\n{item['text']}", {"error": True, "queued_failed": True})
+            except Exception:
+                usage.log_failure(sid, "dispatch")
+
+
+def recover_runs() -> int:
+    """启动时调用一次：上次进程退出时还在跑的轮次，记一条中断消息、清掉它们的队列。
+    没在运行的会话里排着的消息保持不动，事件循环起来后由 dispatch_queue 接着开始。可重复调用。"""
+    rows = db("SELECT * FROM active_runs")
+    for r in rows:
+        sid = r["session_id"]
+        if db("SELECT 1 FROM sessions WHERE id=?", (sid,), one=True):
+            add_message(sid, "error", "服务重启，这一轮被中断了，请重新发送。", {"interrupted": True})
+        db("DELETE FROM active_runs WHERE session_id=?", (sid,))
+        dropped = clear_queue(sid)
+        if dropped and db("SELECT 1 FROM sessions WHERE id=?", (sid,), one=True):
+            add_message(sid, "event", cancelled_note(dropped, "服务重启"), {"queue_cancelled": True})
+    return len(rows)
 
 
 async def _drive(run: Run, prompt: str, cmd: list[str], cwd: str) -> None:
@@ -410,13 +518,21 @@ async def _drive(run: Run, prompt: str, cmd: list[str], cwd: str) -> None:
                     a["future"].set_result((False, "任务已结束"))
         finally:
             RUNS.pop(run.sid, None)
+            _clear_active(run.sid)
             run.done.set()
             push_session(run.sid)
+            try:
+                dispatch_queue()   # 空出一个位置：让排队的下一条开始
+            except Exception:
+                usage.log_failure(run.sid, "dispatch")
 
 
 @router.post("/api/sessions/{sid}/stop")
-def stop_session(sid: str, user: dict = Depends(current_user)):
+async def stop_session(sid: str, user: dict = Depends(current_user)):
     session_for(sid, user)
+    dropped = clear_queue(sid)   # 先清队列：这一轮一结束，dispatch_queue 就不会把排队的接着开始
+    if dropped:
+        add_message(sid, "event", cancelled_note(dropped, "已停止"), {"queue_cancelled": True})
     run = RUNS.get(sid)
     if run and run.proc:
         run.stopped = True
@@ -424,4 +540,15 @@ def stop_session(sid: str, user: dict = Depends(current_user)):
             if not a["future"].done():
                 a["future"].set_result((False, "用户停止了任务"))
         _kill_tree(run.proc)
+    return {"ok": True}
+
+
+@router.delete("/api/sessions/{sid}/queue/{qid}")
+async def cancel_queued(sid: str, qid: int, user: dict = Depends(current_user)):
+    session_for(sid, user)   # 会话主人和管理员可以取消
+    if not db("SELECT 1 FROM turn_queue WHERE id=? AND session_id=?", (qid, sid), one=True):
+        raise HTTPException(404, "这条排队的消息已经开始或已被取消")
+    db("DELETE FROM turn_queue WHERE id=?", (qid,))
+    push_session(sid)
+    dispatch_queue()
     return {"ok": True}

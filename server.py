@@ -15,6 +15,7 @@ import socket
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import Depends, FastAPI
@@ -33,7 +34,14 @@ import skills_api
 import usage
 from store import BASE, DISCOVERY_PORT, FILE_ROOT, KB_ROOT, PORT, VERSION, current_user, db, find_claude, first_admin, hash_password
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app):
+    runner.dispatch_queue()   # 事件循环起来了：把重启前还排着的消息接着开始
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 app.include_router(files_api.router)
 app.include_router(skills_api.router)
 app.include_router(kb.router)
@@ -50,6 +58,12 @@ try:
     kb.recover_section_rename()   # 上次分区改名中途崩溃的话，把没改完的笔记补上
 except Exception:
     kb._log_section("启动时恢复分区改名失败")
+
+
+try:
+    runner.recover_runs()   # 上次重启时还在跑的轮次：记一条中断消息；排队的消息等事件循环起来后再开始
+except Exception:
+    usage.log_failure("-", "recover_runs")
 
 
 def lan_urls() -> list[str]:

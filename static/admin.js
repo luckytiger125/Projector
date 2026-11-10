@@ -286,6 +286,13 @@
         <div class="mode ${st.perm_mode === "strict" ? "on" : ""}" data-mode="strict"><b>${icon("shield", 17)}严格</b>
           <p>只有 ls、cat 等只读命令和下面白名单里的命令自动执行，其他所有操作都要确认。</p></div>
       </div>
+      <div class="card" style="margin-top:16px">
+        <h4>${icon("bolt", 16)}同时运行的任务数</h4>
+        <div class="muted" style="font-size:13px">台式机上最多同时跑几个 Claude。超过的消息会排队，前面的完成后按先后顺序自动开始（1~16，默认 3）。</div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+          <input id="maxConc" type="number" min="1" max="16" value="${st.max_concurrent}" style="width:80px">
+          <button class="btn small" id="maxConcSave">保存</button></div>
+      </div>
       <div class="card" style="margin-top:16px" ${st.perm_mode === "standard" ? "" : "hidden"}>
         <h4>${icon("alert", 16)}标准档：仍然要确认的命令</h4>
         <div class="muted" style="font-size:13px">命令以这些开头时会弹确认，比如写 <code>rm</code> 会拦住 <code>rm -rf 文件夹</code>。注意：用 python 脚本删文件这类间接操作拦不住。</div>
@@ -297,6 +304,11 @@
         ${tagEditor("bash_allow", st.bash_allow, st.default_allow, "比如 python")}
       </div>`;
     const save = async patch => { try { await post("/api/admin/settings", patch, "PUT"); toast("已保存，新的对话开始生效", "ok", 2000); } catch (e) { toast(e.message, "err"); } show("settings"); };
+    $("maxConcSave").onclick = () => {
+      const n = Number($("maxConc").value);
+      if (!Number.isInteger(n) || n < 1 || n > 16) return toast("请填 1 到 16 之间的整数", "err");
+      save({ max_concurrent: n });
+    };
     box().querySelectorAll("[data-mode]").forEach(m => m.onclick = () => { if (!m.classList.contains("on")) save({ perm_mode: m.dataset.mode }); });
     box().querySelectorAll(".tagbox").forEach(tb => {
       const key = tb.dataset.key, list = st[key];

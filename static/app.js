@@ -465,7 +465,7 @@ async function pickSessionSection() {
 }
 
 function sessStatus(s) {
-  const map = { pending: ["待确认", "wait"], running: ["进行中", "run"], stopped: ["已停止", "off"], done: ["已完成", "done"] };
+  const map = { pending: ["待确认", "wait"], running: ["进行中", "run"], queued: ["排队中", "off"], stopped: ["已停止", "off"], done: ["已完成", "done"] };
   if (s && s.status && map[s.status]) return map[s.status];
   if (s && s.pending) return ["待确认", "wait"];
   if (s && s.running) return ["进行中", "run"];
@@ -589,7 +589,8 @@ function renderTop() {
   if ($("permLabel")) $("permLabel").textContent = s && s.bypass ? "完全放行" : "标准 · 需确认";
   const running = !!(s && s.running);
   $("stopBtn").hidden = !running;
-  $("sendBtn").hidden = running;
+  $("sendBtn").hidden = false;  // 进行中也能发：发出去的消息会排队
+  $("sendBtn").title = running ? "加入排队（前面的完成后自动开始）" : "发送";
   $("cbox").classList.toggle("running", running);
   $("bypassWrap").hidden = !me.can_bypass || !mine;
   $("bypass").checked = !!(s && s.bypass);
@@ -729,7 +730,8 @@ function renderMessages(force = false) {
   if (!me) return;
   if (liveRaf) { cancelAnimationFrame(liveRaf); liveRaf = 0; }  // 完整渲染会带上最新状态
   renderTop();
-  if (!messages.length && !live && !approvals.length) {
+  const queued = (currentSess && currentSess.queue) || [];
+  if (!messages.length && !live && !approvals.length && !queued.length) {
     $("list").innerHTML = `<div class="entry-empty">还没有记录。写下要交给 Claude 的事，发送后从这里开始。</div>`;
     return;
   }
@@ -770,6 +772,8 @@ function renderMessages(force = false) {
         <button class="btn primary" data-allow="${a.id}">${icon("check", 15)}同意</button>
       </div>
     </div>`).join("");
+  // 排队中的消息：还没写进聊天记录，暗一点显示在最下面
+  html += queued.map(q => `<div class="entry me" data-qid="${q.id}" style="opacity:.6">${sideOf(null, "排队中")}<div class="body">${esc(q.text)}${isMine() ? `<div style="margin-top:6px"><button class="btn ghost small" data-qcancel="${q.id}">${icon("x", 13)}取消</button></div>` : ""}</div></div>`).join("");
   const box = $("messages");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
   $("list").innerHTML = html;
@@ -798,6 +802,12 @@ $("list").addEventListener("click", e => {
     if (act === "ref") showFiles();
     if (act === "local") $("localBtn").click();
     if (act === "skill") { if (mySkills.length) openSkillPop(); else loadSkills().then(openMySkills); }
+    return;
+  }
+  const qc = e.target.closest("[data-qcancel]");
+  if (qc) {
+    qc.disabled = true;
+    post(`/api/sessions/${current}/queue/${qc.dataset.qcancel}`, null, "DELETE").catch(err => { toast(err.message, "err"); qc.disabled = false; });
     return;
   }
   const id = e.target.closest("[data-allow],[data-deny]");
@@ -944,8 +954,9 @@ async function send() {
   if (!IS_DESKTOP && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
   try {
     const sid = await ensureSession(text);
-    await post(`/api/sessions/${sid}/messages`, { text, refs: composer.refs.map(r => r.path), skill: composer.skill });
+    const r = await post(`/api/sessions/${sid}/messages`, { text, refs: composer.refs.map(r => r.path), skill: composer.skill });
     $("input").value = ""; autosize(); resetComposer();
+    if (r && r.queued) toast("已加入排队，前面的完成后自动开始", "ok", 2000);  // 排队项由随后的 session 事件显示
   } catch (e) { toast(e.message, "err"); }
   finally { $("sendBtn").disabled = false; renderTop(); }
 }
