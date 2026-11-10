@@ -1260,7 +1260,7 @@ $("localBtn").onclick = () => {
   dialog("把本机文件交给 Claude", `
     <p style="margin:0 0 10px">文件会上传到台式机上<b>你自己的工作区</b>（别人看不到），Claude 在那里用台式机的技能处理。</p>
     ${IS_DESKTOP ? `<div class="card" style="margin:0 0 10px"><h4>${icon("sync", 16)}添加本机文件夹</h4><div class="muted" style="font-size:13px">处理完可以一键把改动同步回这台电脑的原文件夹，覆盖前会自动备份。</div></div>` : ""}
-    <p class="muted" style="margin:0;font-size:13px">也可以直接把文件拖进窗口。${IS_DESKTOP ? "" : "处理结果可以在“文件库 → 我的工作区”里下载。"}</p>`, buttons);
+    <p class="muted" style="margin:0;font-size:13px">也可以直接把文件拖进窗口。${IS_DESKTOP ? "" : "处理结果可以在“文件库 → 我的文件”里下载。"}</p>`, buttons);
 };
 
 $("uploadInput").onchange = async e => {
@@ -1672,7 +1672,7 @@ async function openTrash() {
     <p class="muted" style="margin:0 0 6px;font-size:13px">删除的文件会在这里保留 ${d.days} 天。${admin ? "你是管理员，能看到所有人删除的文件。" : "这里只有你自己删除的文件。"}</p>
     ${d.items.map((t, i) => `<div class="trash-row" style="animation-delay:${Math.min(i, 20) * 25}ms">
       ${fileBadge({ name: t.name, dir: !!t.is_dir })}
-      <div class="tn"><b>${esc(t.name)}</b><small title="${esc(t.orig_path)}">${t.personal && t.owner_name ? esc(t.owner_name) + " 的个人文件" : t.orig_path ? "原来在 " + esc(shortPath(t.orig_path)) : t.personal ? "个人文件" : ""}${t.orig_path || t.personal ? " · " : ""}${t.is_dir ? "文件夹" : fsize(t.size)}</small>
+      <div class="tn"><b>${esc(t.name)}</b><small title="${esc(t.orig_path)}">${t.can_restore === false && t.owner_name ? esc(t.owner_name) + " 的个人文件" : t.orig_path ? "原来在 " + esc(shortPath(t.orig_path)) : t.personal ? "个人文件" : ""}${t.orig_path || t.personal ? " · " : ""}${t.is_dir ? "文件夹" : fsize(t.size)}</small>
         <small>${admin ? esc(t.who || "") + " · " : ""}${ftime(t.deleted_at)}${t.reason && t.reason !== "删除" ? " · " + esc(t.reason) : ""} · 还剩 ${t.days_left} 天</small></div>
       ${t.can_restore === false ? "" : `<button class="btn small" data-restore="${t.id}">${icon("history", 13)}恢复</button>`}
       ${admin ? `<button class="iconbtn" data-purge="${t.id}" title="彻底删除">${icon("x", 15)}</button>` : ""}

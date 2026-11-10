@@ -115,7 +115,7 @@ def crumbs_for(p: Path, user: dict) -> list[dict]:
         if _ws_owner_of(p) != user["id"]:
             return [{"label": "文件库", "path": ""}]   # 别人的不生成可点的路径
         parts = p.relative_to(WS_ROOT).parts
-        out = [{"label": "我的工作区", "path": "ws:"}]
+        out = [{"label": "我的文件", "path": "ws:"}]
         for i, part in enumerate(parts[1:], start=1):
             out.append({"label": part, "path": "ws:" + "/".join(parts[1:i + 1])})
         return out
@@ -154,7 +154,7 @@ def list_dir(d: Path, user: dict, limit: int = 3000) -> list[dict]:
                     if e.name.lower() == "data" and p.resolve() == DATA_DIR:
                         continue  # 项目在 D 盘里时，不显示系统数据文件夹
                     if p == WS_ROOT:
-                        continue  # 所有人（含管理员）都从“我的工作区”进自己的那份
+                        continue  # 所有人（含管理员）都从“我的文件”进自己的那份
                     if d == WS_ROOT and ws_owner(e.name) != user["id"]:
                         continue
                     items.append(entry_info(p, user, e.stat()))
