@@ -252,7 +252,7 @@ def delete_session(sid: str, user: dict = Depends(current_user)):
     ws = session_workspace(s, create=False)
     if ws and ws.exists():
         files_api.move_to_trash(ws, user, f"删除会话 {s['title']}")
-    for f in (f"{sid}.json", f"hint_{sid}.txt", f"settings_{sid}.json"):
+    for f in (f"{sid}.json", f"hint_{sid}.txt", f"settings_{sid}.json", f"guard_{sid}.json"):
         (DATA / "mcp" / f).unlink(missing_ok=True)
     broadcast({"type": "session_deleted", "session_id": sid}, s["user_id"])
     return {"ok": True}

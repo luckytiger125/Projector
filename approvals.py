@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from events import add_message, broadcast, push_session
-from store import current_user, require_internal, session_for
+from store import current_user, db, require_internal, session_for
 
 router = APIRouter()
 
@@ -74,6 +74,17 @@ async def request_approval(body: ApprovalRequest, _: dict = Depends(require_inte
     run = RUNS.get(body.session_id)
     if not run:
         return {"allow": False, "message": "任务已结束"}
+    # 文件隔离的第二道（第一道是 PreToolUse 钩子，没加载时靠这里兜底）：涉及别人的个人文件或系统数据，不弹确认直接拒绝
+    from runner import guard_policy
+    from store import FILE_ROOT, get_user
+    import guard
+    sess = db("SELECT * FROM sessions WHERE id=?", (body.session_id,), one=True) or {}
+    owner = get_user(run.owner_id)
+    if owner:
+        reason = guard.check_tool(guard_policy(owner), body.tool_name, body.input, sess.get("work_dir") or str(FILE_ROOT))
+        if reason:
+            add_message(body.session_id, "event", f"⛔ 已自动拒绝（涉及其他人的个人文件或系统数据）：{approval_summary(body.tool_name, body.input)}")
+            return {"allow": False, "message": reason}
     aid = uuid.uuid4().hex[:8]
     future = asyncio.get_running_loop().create_future()
     a = APPROVALS[aid] = {

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import guard
 import kb
 import sections
 import skills_api
@@ -19,7 +20,7 @@ import usage
 from approvals import APPROVAL_TIMEOUT, pending_for, questions_for
 from events import lock as events_lock
 from events import add_message, broadcast, push_session
-from store import (BASE, DATA, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, can_bypass, current_user, db, db_insert,
+from store import (BASE, DATA, FILE_ROOT, INTERNAL_TOKEN, KB_ROOT, PORT, TRASH, WS_ROOT, can_bypass, current_user, db, db_insert,
                    find_claude, get_setting, get_user, jdump, posix_rule_path, session_for, session_workspace, user_ws_dir)
 
 router = APIRouter()
@@ -143,20 +144,50 @@ def _hint_file(sess: dict, owner: dict) -> Path:
     return path
 
 
-def _deny_rules(owner: dict) -> list[str]:
-    """软隔离：不让 Claude 用文件工具碰聊天记录库、待审核的 skill 和别人的工作区。"""
+def _deny_paths(owner: dict) -> list[Path]:
+    """软隔离要保护的路径：聊天记录库、待审核的 skill、别人的工作区、各种缓存。"""
     paths = [DATA / "center.db", DATA / "internal_token.txt", DATA / "mcp", DATA / "skills" / "submissions", TRASH,
-             kb.DOC_CACHE_DIR]   # 文档缓存：Claude 只能通过 read_document 读，不能直接碰缓存目录
+             kb.DOC_CACHE_DIR,   # 文档缓存：Claude 只能通过 read_document 读，不能直接碰缓存目录
+             DATA / "preview"]   # Office 转 PDF 的预览缓存
     for u in db("SELECT * FROM users WHERE id != ?", (owner["id"],)):
         paths += [user_ws_dir(u, create=False), DATA / "plugins" / str(u["id"])]
+    return paths
+
+
+def _deny_rules(owner: dict) -> list[str]:
+    """软隔离：不让 Claude 用文件工具碰聊天记录库、待审核的 skill 和别人的工作区。"""
     rules = []
-    for p in paths:
+    for p in _deny_paths(owner):
         pat = posix_rule_path(p) + ("/**" if p.suffix == "" else "")
         rules += [f"Read({pat})", f"Edit({pat})", f"Write({pat})"]
     # 知识库可以读，但只能通过 kb_write 改（这样才有作者和历史记录）
     kbp = posix_rule_path(KB_ROOT) + "/**"
     rules += [f"Edit({kbp})", f"Write({kbp})"]
     return rules
+
+
+def guard_policy(owner: dict) -> guard.Policy:
+    """文件隔离策略：本人只能进自己的工作区，别人的工作区和系统数据一律禁止（给 guard.py 钩子和确认前的检查用）。"""
+    ws_root = Path(WS_ROOT)
+    forbidden = []
+    for p in _deny_paths(owner):
+        try:
+            p.relative_to(ws_root)   # 在工作区根里面的（别人的文件夹、回收站）由 ws_root 规则管
+        except ValueError:
+            forbidden.append(str(p))
+    # 先取完用户列表再逐个算文件夹名：user_ws_dir 里要用数据库锁，不能在持锁时嵌套
+    others = [user_ws_dir(u, create=False).name for u in db("SELECT * FROM users WHERE id != ?", (owner["id"],))]
+    return guard.Policy(ws_root=str(ws_root), own=[str(user_ws_dir(owner, create=False))],
+                        forbidden=forbidden, other_names=others)
+
+
+def _guard_settings(sess: dict, owner: dict) -> dict:
+    """写策略文件，返回带 PreToolUse 钩子的 settings 字典（标准档会再往里加 permissions）"""
+    policy_file = DATA / "mcp" / f"guard_{sess['id']}.json"
+    policy_file.write_text(guard_policy(owner).dumps(), encoding="utf-8")
+    # Windows 上钩子命令由 Git Bash 执行：路径一律正斜杠并加双引号
+    command = f'"{Path(sys.executable).as_posix()}" "{(BASE / "guard.py").as_posix()}" "{policy_file.as_posix()}"'
+    return {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": command, "timeout": 20}]}]}}
 
 
 def build_command(claude_bin: str, sess: dict, owner: dict, extra_dirs: list[Path]) -> list[str]:
@@ -184,6 +215,8 @@ def build_command(claude_bin: str, sess: dict, owner: dict, extra_dirs: list[Pat
         },
     }}}), encoding="utf-8")
     cmd += ["--mcp-config", str(mcp_config)]
+    settings_data = _guard_settings(sess, owner)   # 三个档位都挂文件隔离钩子（钩子在权限判断之前执行，放行规则挡不住它）
+    settings = DATA / "mcp" / f"settings_{sess['id']}.json"
     if sess["bypass"] and can_bypass(owner):
         cmd += ["--permission-mode", "bypassPermissions"]
     elif perm_mode() == "strict":
@@ -192,11 +225,11 @@ def build_command(claude_bin: str, sess: dict, owner: dict, extra_dirs: list[Pat
         cmd += ["--permission-prompt-tool", "mcp__center__approve", "--allowedTools", *auto]
     else:
         # 标准：读、改、运行命令都自动放行，只有危险命令走确认（ask 规则优先于 allow）
-        settings = DATA / "mcp" / f"settings_{sess['id']}.json"
-        settings.write_text(json.dumps({"permissions": {"ask": _cmd_rules(get_setting("ask_cmds", DEFAULT_ASK_CMDS))}},
-                                       ensure_ascii=False), encoding="utf-8")
+        settings_data["permissions"] = {"ask": _cmd_rules(get_setting("ask_cmds", DEFAULT_ASK_CMDS))}
         auto = READ_TOOLS + ["Bash", "PowerShell", "NotebookEdit", "MultiEdit"] + EDIT_TOOLS + SKILL_TOOLS
-        cmd += ["--settings", str(settings), "--permission-prompt-tool", "mcp__center__approve", "--allowedTools", *auto]
+        cmd += ["--permission-prompt-tool", "mcp__center__approve", "--allowedTools", *auto]
+    settings.write_text(json.dumps(settings_data, ensure_ascii=False), encoding="utf-8")
+    cmd += ["--settings", str(settings)]
     if sess["claude_session"]:
         cmd += ["--resume", sess["claude_session"]]
     return cmd
@@ -349,6 +382,11 @@ def _begin_turn(sess: dict, text: str, author: dict, refs: list[str] | None = No
     for r in refs:
         p = Path(r)
         extra.append(p if p.is_dir() else p.parent)
+    # 文件隔离：工作目录和要加进 --add-dir 的目录不能是别人的工作区、工作区根本身、回收站或系统数据（放在登记 RUNS 之前）
+    policy = guard_policy(owner)
+    for d in [cwd, *extra]:
+        if guard.check_path(policy, str(d), cwd):
+            raise HTTPException(403, f"不能使用这个文件夹：{d}。它是其他人的个人工作区、工作区根目录、回收站或系统数据，请换一个文件夹")
     run = RUNS[sid] = Run(sid, sess["user_id"])
     meta = {"author": author["display_name"], "bypass": bool(sess["bypass"])}
     if refs:
