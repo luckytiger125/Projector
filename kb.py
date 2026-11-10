@@ -9,6 +9,7 @@
 Claude 通过 kb_search / kb_read / kb_write 工具读写（自动记作者，每次修改都留历史，可以恢复）；
 read_document 把 Word、Excel、PPT、PDF 转成文字给 Claude 读。大家在网页的“知识库”里看、搜、改、看关系图谱。
 """
+import hashlib
 import json
 import os
 import re
@@ -28,7 +29,7 @@ import files_api
 import sections
 from skills_api import _session_owner
 from store import (DATA, FILE_ROOT, KB_ROOT, current_user, db, db_insert, get_setting, get_user, is_admin, log_file_op,
-                   require_internal, safe_name, set_setting)
+                   require_admin, require_internal, safe_name, set_setting)
 
 router = APIRouter()
 
@@ -702,7 +703,22 @@ A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 PKG = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 SHEET_ROWS = 400
-_doc_cache: dict[tuple, str] = {}
+# 文档缓存版本号：下面三处任一改动，都必须把它 +1，旧缓存才会失效：
+#   1) xlsx 每个工作表的行数上限 SHEET_ROWS；2) 非 Office 文件的 5 MB 上限；3) 扫描件判定门槛 SCAN_MIN_CHARS
+EXTRACTOR_VERSION = 1
+SCAN_MIN_CHARS = 20
+TEXT_MAX_BYTES = 5 * 1024 * 1024
+DOC_CACHE_DIR = DATA / "doc_cache"
+DOC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+DOC_CACHE_MAX_BYTES = 2 * 1024**3
+PRUNE_EVERY = 7 * 24 * 3600
+PRUNE_KEY = "doc_cache_last_prune"
+ORPHAN_GRACE = 600          # 清理孤儿 MD 时跳过最近 10 分钟写入的（可能正在写、索引还没落库）
+L1_MAX = 30
+_l1: dict[tuple, tuple[str, str]] = {}    # 键与 L2 相同：(normcase 路径, size, mtime_ns, 版本)
+_l1_lock = threading.Lock()
+_path_locks: dict[str, threading.Lock] = {}
+_path_locks_guard = threading.Lock()
 
 
 def _wpara(p) -> str:
@@ -809,7 +825,8 @@ def _pdf(p: Path) -> str:
     try:
         from pypdf import PdfReader
     except ImportError:
-        return "（台式机没装 pypdf，读不了 PDF：在服务端文件夹运行 pip install pypdf，或者直接用 Read 工具读）"
+        # 必须抛异常：返回说明文字会被当成正文缓存，装上 pypdf 后（size/mtime 没变）还会继续命中
+        raise HTTPException(400, "台式机没装 pypdf，读不了 PDF：在服务端文件夹运行 pip install pypdf，或者直接用 Read 工具读")
     reader = PdfReader(str(p))
     out = []
     for i, page in enumerate(reader.pages, 1):
@@ -818,22 +835,17 @@ def _pdf(p: Path) -> str:
         except Exception:  # noqa: BLE001
             text = ""
         out.append(f"## 第 {i} 页\n{text.strip()}")
-    text = "\n\n".join(out).strip()
-    if len(re.sub(r"\s|#|第 \d+ 页", "", text)) < 20:
-        text += "\n\n（这个 PDF 几乎没有文字，可能是扫描件或图片，需要 OCR 才能读）"
-    return text
+    return "\n\n".join(out).strip()
 
 
 OLD_OFFICE = {"doc": "docx", "wps": "docx", "rtf": "docx", "odt": "docx",
               "xls": "xlsx", "et": "xlsx", "ods": "xlsx", "ppt": "pptx", "dps": "pptx", "odp": "pptx"}
 
 
-def extract_text(p: Path) -> str:
-    st = p.stat()
-    key = (str(p), st.st_mtime, st.st_size)
-    if key in _doc_cache:
-        return _doc_cache[key]
+def _extract_uncached(p: Path) -> tuple[str, str]:
+    """只做解析，不碰 L1/L2。返回 (正文, status)：ok 有正文 / empty 没有文字 / scan 疑似扫描件（保留页码骨架）。"""
     ext = p.suffix.lower().lstrip(".")
+    scan = False
     if ext in OLD_OFFICE:
         if not files_api.SOFFICE:
             raise HTTPException(400, f".{ext} 是老格式，台式机装了 LibreOffice 才能读；也可以请用户另存为 .{OLD_OFFICE[ext]}")
@@ -843,7 +855,7 @@ def extract_text(p: Path) -> str:
             out = next(Path(tmp).glob("*." + OLD_OFFICE[ext]), None)
             if not out:
                 raise HTTPException(500, "转换失败，文件可能损坏或加了密码")
-            text = extract_text(out)
+            return _extract_uncached(out)   # 临时文件只解析，不写缓存；结果由调用方按原文件缓存
     elif ext in ("docx", "docm", "xlsx", "xlsm", "pptx", "ppsx"):
         try:
             with zipfile.ZipFile(p) as z:
@@ -852,14 +864,205 @@ def extract_text(p: Path) -> str:
             raise HTTPException(400, "读不了这个文件：可能加了密码，或者文件已损坏")
     elif ext == "pdf":
         text = _pdf(p)
-    elif st.st_size <= 5 * 1024 * 1024:
+        scan = bool(text) and len(re.sub(r"\s|#|第 \d+ 页", "", text)) < SCAN_MIN_CHARS
+    elif p.stat().st_size <= TEXT_MAX_BYTES:
         text = read_text(p)
     else:
         raise HTTPException(400, "文件太大，也不是能转成文字的格式")
-    if len(_doc_cache) > 30:
-        _doc_cache.clear()
-    _doc_cache[key] = text
-    return text
+    if not text.strip():
+        return "", "empty"
+    return text, "scan" if scan else "ok"
+
+
+def _log_doc(msg: str) -> None:
+    try:
+        logs = DATA / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        with open(logs / "doc_cache.log", "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
+
+def _path_lock(sp: str) -> threading.Lock:
+    with _path_locks_guard:
+        return _path_locks.setdefault(sp, threading.Lock())
+
+
+def _md_name(sp: str) -> str:
+    return hashlib.sha256(sp.encode("utf-8")).hexdigest()[:32] + ".md"
+
+
+def _l2_get(sp: str, size: int, mtime_ns: int) -> tuple[str, str] | None:
+    """L2 命中返回 (正文, status)；键不符、MD 缺失或大小对不上、任何异常都当未命中（返回 None）。"""
+    try:
+        row = db("SELECT * FROM doc_cache WHERE source_path=?", (sp,), one=True)
+        if not row or row["size"] != size or row["mtime_ns"] != mtime_ns or row["extractor_version"] != EXTRACTOR_VERSION:
+            return None
+        f = DOC_CACHE_DIR / row["md_name"]
+        if not f.is_file() or f.stat().st_size != row["bytes"]:
+            return None
+        text = f.read_text(encoding="utf-8")
+        now = time.time()
+        db("UPDATE doc_cache SET hits = hits + 1, used = CASE WHEN used IS NULL OR ? - used > 3600 THEN ? ELSE used END "
+           "WHERE source_path=?", (now, now, sp))
+        return text, row["status"]
+    except Exception as e:  # noqa: BLE001
+        _log_doc(f"读缓存失败 {sp}: {e!r}")
+        return None
+
+
+def _l2_put(sp: str, size: int, mtime_ns: int, text: str, status: str) -> None:
+    """写 MD（先 .tmp 再原子替换）再写索引；索引失败就删掉刚写的 MD。任何失败只记日志，不影响本次返回。"""
+    name = _md_name(sp)
+    f = DOC_CACHE_DIR / name
+    tmp = f.with_name(name + ".tmp")
+    try:
+        data = text.encode("utf-8")
+        tmp.write_bytes(data)
+        os.replace(tmp, f)
+    except Exception as e:  # noqa: BLE001
+        _log_doc(f"写缓存文件失败 {sp}: {e!r}")
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return
+    try:
+        now = time.time()
+        db("INSERT INTO doc_cache (source_path, size, mtime_ns, extractor_version, md_name, chars, bytes, status, hits, created, used) "
+           "VALUES (?,?,?,?,?,?,?,?,0,?,?) ON CONFLICT(source_path) DO UPDATE SET size=excluded.size, "
+           "mtime_ns=excluded.mtime_ns, extractor_version=excluded.extractor_version, md_name=excluded.md_name, "
+           "chars=excluded.chars, bytes=excluded.bytes, status=excluded.status, used=excluded.used",
+           (sp, size, mtime_ns, EXTRACTOR_VERSION, name, len(text), len(data), status, now, now))
+    except Exception as e:  # noqa: BLE001
+        _log_doc(f"写缓存索引失败 {sp}: {e!r}")
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def extract_document(p: Path) -> dict:
+    """读文档：L1 内存 → L2 磁盘（doc_cache 表 + MD 文件）→ 现解析并回写。
+    提取抛异常时不写任何缓存。返回 {text, status, cached, source_mtime, chars}。"""
+    st = p.stat()
+    sp = os.path.normcase(str(p.resolve()))
+    key = (sp, st.st_size, st.st_mtime_ns, EXTRACTOR_VERSION)
+
+    def result(text, status, cached):
+        return {"text": text, "status": status, "cached": cached, "source_mtime": st.st_mtime, "chars": len(text)}
+
+    with _path_lock(sp):   # 同一路径串行，新旧 mtime 不会并行写
+        with _l1_lock:
+            hit = _l1.get(key)
+        if hit:
+            return result(hit[0], hit[1], True)
+        l2 = _l2_get(sp, st.st_size, st.st_mtime_ns)
+        if l2 is None:
+            text, status = _extract_uncached(p)
+            _maybe_prune_async()
+            _l2_put(sp, st.st_size, st.st_mtime_ns, text, status)
+            cached = False
+        else:
+            text, status = l2
+            cached = True
+        with _l1_lock:
+            if len(_l1) >= L1_MAX:
+                _l1.clear()
+            _l1[key] = (text, status)
+        return result(text, status, cached)
+
+
+def extract_text(p: Path) -> str:
+    return extract_document(p)["text"]
+
+
+# ---------- 缓存清理与管理接口 ----------
+
+def prune_doc_cache(max_bytes: int = DOC_CACHE_MAX_BYTES) -> dict:
+    """删孤儿 MD、清 MD 已丢失的索引行，再按 used 从旧到新删到总量不超过 max_bytes。只用 store.db()，不拿 _db_lock。"""
+    removed_rows = removed_orphans = freed = 0
+    rows = db("SELECT source_path, md_name, bytes, used, created FROM doc_cache")
+    known = {r["md_name"] for r in rows}
+    now = time.time()
+    try:
+        for f in DOC_CACHE_DIR.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                if (f.name not in known or f.name.endswith(".tmp")) and now - f.stat().st_mtime > ORPHAN_GRACE:
+                    size = f.stat().st_size
+                    f.unlink()
+                    removed_orphans += 1
+                    freed += size
+            except OSError as e:
+                _log_doc(f"清理孤儿文件失败 {f.name}: {e!r}")
+    except OSError as e:
+        _log_doc(f"扫描缓存目录失败: {e!r}")
+    live = []
+    for r in rows:
+        if (DOC_CACHE_DIR / r["md_name"]).is_file():
+            live.append(r)
+        else:
+            db("DELETE FROM doc_cache WHERE source_path=?", (r["source_path"],))
+            removed_rows += 1
+    total = sum(r["bytes"] or 0 for r in live)
+    for r in sorted(live, key=lambda r: r["used"] or r["created"] or 0):
+        if total <= max_bytes:
+            break
+        try:
+            (DOC_CACHE_DIR / r["md_name"]).unlink(missing_ok=True)
+        except OSError as e:
+            _log_doc(f"清理缓存失败 {r['md_name']}: {e!r}")
+            continue
+        db("DELETE FROM doc_cache WHERE source_path=?", (r["source_path"],))
+        total -= r["bytes"] or 0
+        freed += r["bytes"] or 0
+        removed_rows += 1
+    set_setting(PRUNE_KEY, time.time())
+    return {"removed_rows": removed_rows, "removed_orphans": removed_orphans, "freed_bytes": freed, "total_bytes": total}
+
+
+def maybe_prune(now: float | None = None) -> bool:
+    """距上次清理超过 7 天才执行（只比较一次时间戳，不扫目录）。返回是否真的执行了。"""
+    now = now or time.time()
+    try:
+        last = get_setting(PRUNE_KEY, 0) or 0
+        if now - last < PRUNE_EVERY:
+            return False
+        set_setting(PRUNE_KEY, now)      # 先占位，避免多个线程重复清理
+        prune_doc_cache()
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log_doc(f"自动清理失败: {e!r}")
+        return False
+
+
+def _maybe_prune_async() -> None:
+    try:
+        if time.time() - (get_setting(PRUNE_KEY, 0) or 0) >= PRUNE_EVERY:
+            threading.Thread(target=maybe_prune, daemon=True).start()
+    except Exception:
+        pass
+
+
+def start_prune_thread() -> None:
+    """启动时调用：后台检查一次，不拖慢服务启动。"""
+    threading.Thread(target=maybe_prune, daemon=True).start()
+
+
+@router.get("/api/admin/doc-cache")
+def admin_doc_cache(_: dict = Depends(require_admin)):
+    r = db("SELECT COUNT(*) n, COALESCE(SUM(bytes),0) b, COALESCE(SUM(hits),0) h, MAX(used) u FROM doc_cache", one=True)
+    by = {x["status"]: x["n"] for x in db("SELECT status, COUNT(*) n FROM doc_cache GROUP BY status")}
+    return {"count": r["n"], "bytes": r["b"], "hits": r["h"], "last_used": r["u"], "by_status": by,
+            "last_prune": get_setting(PRUNE_KEY, 0) or None, "max_bytes": DOC_CACHE_MAX_BYTES}
+
+
+@router.post("/api/admin/doc-cache/prune")
+def admin_doc_cache_prune(_: dict = Depends(require_admin)):
+    return prune_doc_cache()
 
 
 # ---------- 接口：网页 ----------
@@ -1171,9 +1374,11 @@ def internal_doc(body: KBReq, _: dict = Depends(require_internal)):
     p = files_api.resolve_path(body.path, owner)   # 别人的工作区读不了
     if p.is_dir():
         raise HTTPException(400, "这是文件夹，请给一个文件")
-    text = extract_text(p)
+    d = extract_document(p)
+    text = d["text"]   # 只含正文；空文本/扫描件的提示由 read_document 按 status 合成
     limit = 30000
     start = max(0, body.offset)
     part = text[start:start + limit]
     more = start + limit < len(text)
-    return {"text": part, "total": len(text), "start": start, "end": start + len(part), "more": more}
+    return {"text": part, "total": len(text), "start": start, "end": start + len(part), "more": more,
+            "status": d["status"], "cached": d["cached"], "source_mtime": d["source_mtime"], "chars": d["chars"]}

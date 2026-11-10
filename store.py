@@ -162,6 +162,18 @@ _db.executescript(
         archived INTEGER DEFAULT 0,
         created REAL);
     CREATE INDEX IF NOT EXISTS idx_sections_active ON sections(archived, sort, id);
+    CREATE TABLE IF NOT EXISTS doc_cache (
+        source_path TEXT PRIMARY KEY,
+        size INTEGER,
+        mtime_ns INTEGER,
+        extractor_version INTEGER,
+        md_name TEXT,
+        chars INTEGER,
+        bytes INTEGER,
+        status TEXT,
+        hits INTEGER DEFAULT 0,
+        created REAL,
+        used REAL);
     """
 )
 for _table, _col in (("sessions", "bypass INTEGER DEFAULT 0"), ("sessions", "created_by TEXT DEFAULT ''"),

@@ -19,7 +19,7 @@ import pytest  # noqa: E402
 
 import store  # noqa: E402
 
-_CLEAN_TABLES = ("usage_turns", "messages", "sessions", "tokens", "users", "sections")
+_CLEAN_TABLES = ("usage_turns", "messages", "sessions", "tokens", "users", "sections", "doc_cache")
 
 
 @pytest.fixture(autouse=True)

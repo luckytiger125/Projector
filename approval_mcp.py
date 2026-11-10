@@ -22,7 +22,9 @@ CENTER_TOKEN = os.environ["CENTER_TOKEN"]
 CENTER_SESSION = os.environ["CENTER_SESSION"]
 HEADERS = {"Authorization": f"Bearer {CENTER_TOKEN}"}
 
-_LOG = Path(__file__).resolve().parent / "data" / "logs" / "approval_mcp.log"
+# 测试时 PROJECTOR_DATA 指向临时目录，日志不写进仓库的 data/
+_DATA = Path(os.environ["PROJECTOR_DATA"]) if os.environ.get("PROJECTOR_DATA") else Path(__file__).resolve().parent / "data"
+_LOG = _DATA / "logs" / "approval_mcp.log"
 _LOG.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(filename=_LOG, level=logging.INFO, encoding="utf-8", format="%(asctime)s %(message)s")
 log = logging.getLogger("approval")
@@ -172,11 +174,23 @@ async def read_document(path: str, offset: int = 0) -> str:
     try:
         d = await _post("/api/internal/kb/doc", {"path": path, "offset": offset}, timeout=240)
     except Exception as e:
-        return f"读不了：{e}"
-    text = d["text"] or "（这个文件里没有读到文字）"
+        # 提取失败（加密、损坏、没装 pypdf、过大……）：原样给出原因；失败不进缓存，处理好后直接重读
+        return f"读不了这个文件：{e}（这次失败没有被缓存，处理好文件或环境后可以直接重读）"
+    status = d.get("status") or "ok"
+    text = d["text"]
+    if status == "empty" and not d["start"]:
+        return "（这个文件里没有文字：文件是空的，或者只有图片、图表。需要内容的话请让用户确认文件是否正确）"
+    if not text and not d["start"]:
+        return "（没有读到文字：这个文件可能确实是空的。如果用户说里面有内容，请让用户另存为 docx/xlsx/pdf 后再试）"
+    scan_hint = ""
+    if status == "scan" and not d["start"]:
+        scan_hint = "\n\n（这个 PDF 几乎没有文字，可能是扫描件或图片，需要 OCR 才能读）"
+    text += scan_hint
     if d["more"] or d["start"]:
         text += f"\n\n（共 {d['total']} 字，这是第 {d['start']}~{d['end']} 字" + \
                 (f"；继续读用 offset={d['end']}）" if d["more"] else "）")
+    elif scan_hint:
+        text += f"\n\n（共 {d['total']} 字）"
     return text
 
 

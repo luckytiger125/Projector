@@ -133,6 +133,7 @@ app.include_router(kb.router)
 app.include_router(usage.router)
 app.include_router(sections.router)
 
+kb.start_prune_thread()   # 文档缓存每 7 天清理一次，放后台线程，不拖慢启动
 try:
     kb.recover_section_rename()   # 上次分区改名中途崩溃的话，把没改完的笔记补上
 except Exception:
@@ -333,7 +334,8 @@ def _hint_file(sess: dict, owner: dict) -> Path:
 
 def _deny_rules(owner: dict) -> list[str]:
     """软隔离：不让 Claude 用文件工具碰聊天记录库、待审核的 skill 和别人的工作区。"""
-    paths = [DATA / "center.db", DATA / "internal_token.txt", DATA / "mcp", DATA / "skills" / "submissions", TRASH]
+    paths = [DATA / "center.db", DATA / "internal_token.txt", DATA / "mcp", DATA / "skills" / "submissions", TRASH,
+             kb.DOC_CACHE_DIR]   # 文档缓存：Claude 只能通过 read_document 读，不能直接碰缓存目录
     for u in db("SELECT * FROM users WHERE id != ?", (owner["id"],)):
         paths += [user_ws_dir(u, create=False), DATA / "plugins" / str(u["id"])]
     rules = []
