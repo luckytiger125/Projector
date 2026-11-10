@@ -1298,7 +1298,8 @@ window.addEventListener("dragenter", e => {
   const toLibrary = $("filesBox").classList.contains("show") && F.mode === "browse";
   if (!toLibrary && !isMine()) return;
   dragDepth++;
-  $("dropzone").querySelector(".dz div").textContent = toLibrary ? "松手，上传到这个文件夹" : "松手，交给 Claude";
+  const pub = toLibrary && !F.path.startsWith("ws:");
+  $("dropzone").querySelector(".dz div").textContent = toLibrary ? (pub ? "松手，上传到公共文件库（所有人可见）" : "松手，上传到我的文件（仅自己可见）") : "松手，交给 Claude";
   $("dropzone").querySelector(".dz p").textContent = toLibrary ? (F.writable ? F.abs : "这个位置只能看，不能上传") : "文件会上传到你自己的工作区";
   $("dropzone").classList.add("show");
 });
@@ -1379,7 +1380,7 @@ async function syncBack(lid) {
 // ---------- 文件浏览和预览 ----------
 // 模式：browse 浏览；workdir 选工作文件夹
 
-const F = { roots: [], office: false, path: "", abs: "", entries: [], sel: null, selEntry: null, searching: false, opened: false, mode: "browse", writable: false };
+const F = { roots: [], office: false, path: "ws:", abs: "", entries: [], sel: null, selEntry: null, searching: false, opened: false, mode: "browse", writable: false };
 const EXT = {
   image: "png jpg jpeg gif webp bmp svg ico avif tif tiff heic",
   pdf: "pdf",
@@ -1416,8 +1417,12 @@ function loadScript(src) {
 
 function renderCrumbs(crumbs) {
   $("crumbs").innerHTML = crumbs.map(c => `<a data-go="${esc(c.path)}">${esc(c.label)}</a>`).join(" / ") + (F.searching ? " / 搜索结果" : "");
-  const ws = F.path.startsWith("ws");
+  const ws = F.path.startsWith("ws:");
   $("areas").querySelectorAll("button").forEach(b => b.classList.toggle("on", (b.dataset.area === "ws:") === ws));
+  // 当前在哪一块，一眼能看出来
+  const sc = $("fScope");
+  sc.className = "tag " + (ws ? "admin" : "warn");
+  sc.textContent = ws ? "仅自己可见" : "所有人可见";
 }
 
 function renderList() {
@@ -1609,8 +1614,25 @@ function progress(done, total, text) {
 }
 
 // 把本机文件上传到文件库当前打开的文件夹；files: [{file, rel}]
+let skipLibConfirm = false;  // 本次页面会话内不再提示（刷新后恢复）
+function confirmLibUpload(files) {
+  return new Promise(resolve => {
+    let done = false;
+    const fin = v => () => { done = true; if (v === true && $("dlgBody").querySelector("#luAll")?.checked) skipLibConfirm = true; resolve(v); };
+    const n = new Set(files.map(f => f.rel.split("/")[0])).size;
+    dialog("上传到公共文件库？", `<p style="margin:0 0 10px">这些文件会放进<b>公共文件库</b>，<b>所有同事都能看到</b>。个人文件（工资、合同、证件等）请放到“我的文件”。</p>
+      <p class="muted" style="font-size:13px;margin:0 0 10px">共 ${files.length} 个文件${n < files.length ? `（${n} 项）` : ""}，目标文件夹：${esc(F.abs || "文件库根目录")}</p>
+      <label class="switch"><input type="checkbox" id="luAll"><span class="sw"></span>这次不再提示</label>`,
+      [{ label: "取消", onClick: fin(false) }, { label: "去我的文件", onClick: () => { fin("ws")(); openDir("ws:"); } }, { label: "确认上传", primary: true, onClick: fin(true) }]);
+    const timer = setInterval(() => {
+      if (!$("dlgBox").classList.contains("show")) { clearInterval(timer); if (!done) resolve(false); }
+    }, 200);
+  });
+}
+
 async function uploadToLibrary(files) {
   if (!files.length || !F.writable) return;
+  if (!F.path.startsWith("ws:") && !skipLibConfirm && (await confirmLibUpload(files)) !== true) return;
   const dir = F.path, total = files.reduce((n, f) => n + f.file.size, 0);
   let sent = 0, ok = 0, skipped = 0, policy = null;
   for (let i = 0; i < files.length; i++) {
@@ -1650,9 +1672,9 @@ async function openTrash() {
     <p class="muted" style="margin:0 0 6px;font-size:13px">删除的文件会在这里保留 ${d.days} 天。${admin ? "你是管理员，能看到所有人删除的文件。" : "这里只有你自己删除的文件。"}</p>
     ${d.items.map((t, i) => `<div class="trash-row" style="animation-delay:${Math.min(i, 20) * 25}ms">
       ${fileBadge({ name: t.name, dir: !!t.is_dir })}
-      <div class="tn"><b>${esc(t.name)}</b><small title="${esc(t.orig_path)}">原来在 ${esc(shortPath(t.orig_path))} · ${t.is_dir ? "文件夹" : fsize(t.size)}</small>
+      <div class="tn"><b>${esc(t.name)}</b><small title="${esc(t.orig_path)}">${t.personal && t.owner_name ? esc(t.owner_name) + " 的个人文件" : t.orig_path ? "原来在 " + esc(shortPath(t.orig_path)) : t.personal ? "个人文件" : ""}${t.orig_path || t.personal ? " · " : ""}${t.is_dir ? "文件夹" : fsize(t.size)}</small>
         <small>${admin ? esc(t.who || "") + " · " : ""}${ftime(t.deleted_at)}${t.reason && t.reason !== "删除" ? " · " + esc(t.reason) : ""} · 还剩 ${t.days_left} 天</small></div>
-      <button class="btn small" data-restore="${t.id}">${icon("history", 13)}恢复</button>
+      ${t.can_restore === false ? "" : `<button class="btn small" data-restore="${t.id}">${icon("history", 13)}恢复</button>`}
       ${admin ? `<button class="iconbtn" data-purge="${t.id}" title="彻底删除">${icon("x", 15)}</button>` : ""}
     </div>`).join("")}` : `<div style="text-align:center;padding:24px 0">${orb(48)}<p class="muted">回收站是空的。</p></div>`, [], true);
   body.onclick = async e => {

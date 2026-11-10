@@ -418,6 +418,8 @@ textarea#input::placeholder { color: var(--faint); }
 .fhead { flex-wrap: wrap; }
 .seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--code); }
 .seg button { padding: 3px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); transition: background .2s, color .2s; }
+#areas button { line-height: 1.25; text-align: left; }
+#areas small { display: block; font-size: 10.5px; opacity: .7; }
 .seg button.on { background: var(--raised); color: var(--ink); box-shadow: var(--shadow); }
 .crumbs { flex: 1; min-width: 160px; font-size: 13.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); }
 .crumbs a { color: var(--ink2); text-decoration: none; cursor: pointer; padding: 2px 4px; border-radius: 5px; }
@@ -959,8 +961,9 @@ a.wl.ghost::before { background: none; border: 1px dashed var(--faint); width: 4
 
 <div class="overlay" id="filesBox"><div class="dialog">
   <header class="fhead">
-    <span class="seg" id="areas"><button data-area="">文件库</button><button data-area="ws:">我的工作区</button></span>
+    <span class="seg" id="areas"><button data-area="ws:">我的文件<small>只有自己能看</small></button><button data-area="">公共文件库<small>所有人可见</small></button></span>
     <span class="crumbs" id="crumbs"></span>
+    <span class="tag" id="fScope"></span>
     <input id="fq" placeholder="搜索文件名…">
     <button class="btn small" id="frefDir" title="把当前文件夹引用到对话里"></button>
     <button class="iconbtn closebtn" data-close></button>
@@ -1065,7 +1068,7 @@ a.wl.ghost::before { background: none; border: 1px dashed var(--faint); width: 4
   </section>
 </div></div>
 
-<script src="/static/app.js?v=0.8.0-dev3"></script>
+<script src="/static/app.js?v=0.8.0-dev4"></script>
 <script src="/static/admin.js?v=0.8.0-dev1"></script>
 <script src="/static/kb.js?v=0.7.0"></script>
 </body>
