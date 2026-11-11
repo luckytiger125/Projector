@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>样稿 · 对话框、提示、登录</title>
+<link rel="stylesheet" href="mock.css">
+</head>
+<body class="doc">
+<div class="doc-wrap">
+  <div class="kicker"><span>样稿</span></div>
+  <h1>对话框、提示、登录</h1>
+
+  <h2>登录</h2>
+  <div class="stage">
+    <form class="login">
+      <div class="kicker"><span>Projector · 综合部工作台</span></div>
+      <h3>欢迎回来</h3>
+      <p class="sub">用管理员给你的账号登录</p>
+      <label class="field"><span>用户名</span><input class="input" value="wangmin"></label>
+      <label class="field"><span>密码</span><input class="input" type="password" value="········"></label>
+      <button class="btn primary block" type="button" style="height:var(--hit)">登录</button>
+      <p class="ft">没有账号？请找管理员开通</p>
+    </form>
+  </div>
+
+  <h2>确认对话框</h2>
+  <div class="stage">
+    <div class="dialog danger">
+      <h4>删除</h4>
+      <p>删除这个会话、聊天记录和上传到工作区的文件？</p>
+      <div class="acts"><button class="btn">取消</button><button class="btn danger">删除</button></div>
+    </div>
+    <div class="dialog">
+      <h4>有同名文件</h4>
+      <p>“汇总.md”在目标文件夹里已经有了。</p>
+      <label class="chk"><input type="checkbox">后面都这样</label>
+      <div class="acts"><button class="btn">跳过</button><button class="btn">保留两份</button><button class="btn primary">覆盖</button></div>
+    </div>
+    <div class="dialog">
+      <h4>会话名称</h4>
+      <p style="margin-bottom:var(--s-3)">改成什么名字？</p>
+      <input class="input" value="第 45 周周报汇总">
+      <div class="acts"><button class="btn">取消</button><button class="btn primary">保存</button></div>
+    </div>
+  </div>
+
+  <h2>提示条</h2>
+  <div class="stage">
+    <span class="toast ok"><span class="ic i-check"></span>已复制</span>
+    <span class="toast">已加入排队，前面的完成后自动开始</span>
+    <span class="toast err"><span class="ic i-x"></span>出错了：连不上服务器</span>
+  </div>
+
+  <h2>命令面板</h2>
+  <div class="stage">
+    <div class="palette">
+      <div class="pq"><span class="ic i-search"></span><input placeholder="搜索会话，或输入命令…"><kbd>Esc</kbd></div>
+      <div class="gh">命令</div>
+      <div class="it on"><span class="ic i-plus"></span>新会话</div>
+      <div class="it"><span class="ic i-folder"></span>打开文件库</div>
+      <div class="it"><span class="ic i-book"></span>打开知识库</div>
+      <div class="it"><span class="ic i-users"></span>打开管理后台</div>
+      <div class="gh">会话</div>
+      <div class="it"><span class="dot run"></span>第 45 周周报汇总</div>
+      <div class="it"><span class="dot wait"></span>各科室报送情况核对</div>
+    </div>
+  </div>
+
+  <h2>按钮和标签</h2>
+  <div style="display:flex;flex-wrap:wrap;gap:var(--s-3);align-items:center">
+    <button class="btn primary">同意</button><button class="btn">取消</button><button class="btn danger">彻底删除</button><button class="btn ghost">步骤记录</button>
+    <button class="btn sm">下载</button><button class="icon-btn"><span class="ic i-more"></span></button>
+    <span class="tag">仅自己可见</span><span class="tag ok">已入库</span><span class="tag warn">待审核</span><span class="tag red">待确认</span>
+    <kbd>Esc</kbd>
+  </div>
+</div>
+</body>
+</html>

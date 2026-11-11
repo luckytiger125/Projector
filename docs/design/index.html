@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projector 界面样稿</title>
+<link rel="stylesheet" href="mock.css">
+</head>
+<body class="doc">
+<div class="doc-wrap">
+  <div class="kicker"><span>Projector · 界面精修样稿</span><span>2026-11</span></div>
+  <h1>年鉴风格，精修版</h1>
+  <p>保留纸色底、藏青竖栏、宋体标题；重新定了间距、层级、卡片、输入区、弹层和手机端。功能和文字不变。每一节左边是桌面宽度，右边是 380 像素的手机宽度，点标题右侧的链接可以单独打开。</p>
+
+  <h2>颜色</h2>
+  <div class="swatches">
+    <div class="sw"><i style="background:var(--paper-0)"></i>纸 0 页面</div>
+    <div class="sw"><i style="background:var(--paper-1)"></i>纸 1 侧栏</div>
+    <div class="sw"><i style="background:var(--paper-2)"></i>纸 2 卡片</div>
+    <div class="sw"><i style="background:var(--navy)"></i>藏青 主色</div>
+    <div class="sw"><i style="background:var(--vermilion)"></i>朱砂 待确认</div>
+    <div class="sw"><i style="background:var(--ok)"></i>进行中</div>
+    <div class="sw"><i style="background:var(--warn)"></i>排队 / 待审核</div>
+    <div class="sw"><i style="background:var(--ink-1)"></i>墨 1</div>
+    <div class="sw"><i style="background:var(--ink-3)"></i>墨 3</div>
+  </div>
+
+  <h2>对话 <a class="link" href="chat.html">单独打开</a></h2>
+  <div class="pair"><div class="d"><iframe src="chat.html"></iframe></div><iframe class="m" src="chat.html"></iframe></div>
+
+  <h2>值班板和侧栏 <a class="link" href="board.html">单独打开</a></h2>
+  <div class="pair"><div class="d"><iframe src="board.html"></iframe></div><iframe class="m" src="board.html"></iframe></div>
+
+  <h2>文件库 <a class="link" href="files.html">单独打开</a></h2>
+  <div class="pair"><div class="d"><iframe src="files.html"></iframe></div><iframe class="m" src="files.html"></iframe></div>
+
+  <h2>知识库笔记 <a class="link" href="kb.html">单独打开</a></h2>
+  <div class="pair"><div class="d"><iframe src="kb.html"></iframe></div><iframe class="m" src="kb.html"></iframe></div>
+
+  <h2>管理后台 · 用户 <a class="link" href="admin.html">单独打开</a></h2>
+  <div class="pair"><div class="d"><iframe src="admin.html"></iframe></div><iframe class="m" src="admin.html"></iframe></div>
+
+  <h2>对话框、提示、登录 <a class="link" href="dialogs.html">单独打开</a></h2>
+  <div class="pair"><div class="d"><iframe src="dialogs.html"></iframe></div></div>
+</div>
+<script>
+// 桌面样稿按 1360 宽渲染，再缩放到栏宽，避免在中间宽度下看到挤压的版面
+function fit() {
+  document.querySelectorAll(".pair .d").forEach(d => {
+    const k = d.clientWidth / 1360, f = d.firstElementChild;
+    f.style.transform = "scale(" + k + ")";
+    d.style.height = Math.round(850 * k) + "px";
+  });
+}
+addEventListener("resize", fit); fit();
+</script>
+</body>
+</html>

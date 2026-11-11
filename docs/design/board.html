@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>样稿 · 值班板和侧栏</title>
+<link rel="stylesheet" href="mock.css">
+<script src="shell.js"></script>
+</head>
+<body>
+<div class="app l1" data-m="board">
+  <script>shell({ nav: "home", tabs: "board" })</script>
+  <main class="main">
+    <section class="board">
+      <header class="masthead">
+        <div>
+          <div class="kicker"><span>Projector · 综合部工作台</span></div>
+          <h1>有 1 项操作等你确认</h1>
+          <p class="sub">点开第一列里的会话，同意或拒绝后再继续。</p>
+        </div>
+        <dl class="facts">
+          <div><dt>日期</dt><dd>2026-11-11</dd></div>
+          <div><dt>输入</dt><dd>48.2k</dd></div>
+          <div><dt>值守</dt><dd>王敏</dd></div>
+          <div><dt>输出</dt><dd>12.6k</dd></div>
+          <div><dt>服务器</dt><dd>192.168.1.20</dd></div>
+          <div><dt>缓存</dt><dd>310k</dd></div>
+          <div><dt>工作目录</dt><dd>D:\工作区</dd></div>
+          <div><dt>轮次</dt><dd>17</dd></div>
+          <div><dt>状态</dt><dd style="color:var(--ok)">已连接</dd></div>
+          <div><dt>费用</dt><dd>$1.2840</dd></div>
+        </dl>
+      </header>
+      <div class="cols">
+        <section>
+          <div class="sec-h"><span class="n">01</span><span class="t">待处理</span><span class="c">1</span></div>
+          <a class="card todo">
+            <h4><span class="dot wait"></span><span class="t">各科室报送情况核对</span><span class="tag red">待确认</span></h4>
+            <p>运行命令：git push origin main</p>
+            <div class="ft"><span>分区 · 周报</span><span>09:15</span></div>
+          </a>
+        </section>
+        <section>
+          <div class="sec-h"><span class="n">02</span><span class="t">今日会话</span><span class="c">4</span></div>
+          <a class="card">
+            <h4><span class="dot run"></span><span class="t">第 45 周周报汇总</span></h4>
+            <p>已读完 6 个科室的周报，正在按“重点工作、存在问题、下周计划”三栏合并。</p>
+            <div class="ft"><span>12 条消息</span><span>10:42</span></div>
+          </a>
+          <a class="card">
+            <h4><span class="dot queue"></span><span class="t">会议纪要整理成发文格式</span><span class="tag warn">排队中</span></h4>
+            <p>把周一例会的录音转写稿整理成正式纪要，套用发文模板。</p>
+            <div class="ft"><span>1 条消息</span><span>08:20</span></div>
+          </a>
+          <a class="card">
+            <h4><span class="dot"></span><span class="t">找上个月的采购合同并列出路径和修改时间</span></h4>
+            <p>在 D:\合同\2026 下找到 4 份，其中 2 份是扫描件。</p>
+            <div class="ft"><span>6 条消息</span><span>08:51</span></div>
+          </a>
+        </section>
+        <section>
+          <div class="sec-h"><span class="n">03</span><span class="t">今日知识库</span><span class="c">2</span></div>
+          <a class="card">
+            <h4><span class="ic s i-book"></span><span class="t">周报汇总的固定做法</span></h4>
+            <p>先核对报送名单，再按三栏合并；缺报的科室单列。</p>
+            <div class="ft"><span>经验 · 王敏</span><span>10:05</span></div>
+          </a>
+          <a class="card">
+            <h4><span class="ic s i-file"></span><span class="t">2026 年办公用品采购合同</span></h4>
+            <p>金额、签订日期、对方单位和原文件位置。</p>
+            <div class="ft"><span>文件卡片</span><span>08:58</span></div>
+          </a>
+        </section>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

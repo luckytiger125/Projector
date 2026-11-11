@@ -1,0 +1,92 @@
+/* 设计变量：年鉴风格精修版。所有新组件只用这里的变量，不直接写颜色和尺寸。
+   字体只用系统自带的，不从网络加载。 */
+:root {
+  /* 纸：三层，从底到面越来越亮 */
+  --paper-0: #EBE2CB;   /* 页面底色 */
+  --paper-1: #F2EAD6;   /* 侧栏、次级面 */
+  --paper-2: #FAF5E6;   /* 卡片、输入区、弹层 */
+  --paper-grid: rgba(34, 48, 63, .04);
+
+  /* 墨：四级 */
+  --ink-1: #1C2733;     /* 标题、正文 */
+  --ink-2: #47525E;     /* 次要正文 */
+  --ink-3: #7B7868;     /* 说明、标签 */
+  --ink-4: #A9A28E;     /* 占位、禁用 */
+
+  /* 主色和点缀 */
+  --navy: #1B2A41;
+  --navy-deep: #131F31;
+  --navy-soft: rgba(27, 42, 65, .07);
+  --on-navy: #F2EAD6;
+  --on-navy-dim: rgba(242, 234, 214, .56);
+  --vermilion: #C4452F;         /* 朱砂：只用在待确认、未读、危险操作 */
+  --vermilion-soft: rgba(196, 69, 47, .09);
+
+  /* 状态色，都压低饱和度 */
+  --ok: #2E6B5E;
+  --ok-soft: rgba(46, 107, 94, .10);
+  --warn: #A9781F;
+  --warn-soft: rgba(169, 120, 31, .12);
+  --danger: var(--vermilion);
+  --danger-soft: var(--vermilion-soft);
+
+  /* 线 */
+  --hair: rgba(28, 39, 51, .13);
+  --hair-strong: rgba(28, 39, 51, .30);
+  --rule: var(--ink-1);         /* 版头下的粗线 */
+
+  /* 字体 */
+  --f-serif: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", "STSong", "SimSun", serif;
+  --f-sans: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  --f-mono: "SF Mono", Consolas, "Cascadia Mono", "Courier New", monospace;
+
+  /* 字号阶梯 */
+  --t-12: 12px;
+  --t-13: 13px;
+  --t-14: 14px;
+  --t-16: 16px;
+  --t-20: 20px;
+  --t-28: 28px;
+  --t-40: 40px;
+  --lh-body: 1.7;
+  --lh-tight: 1.3;
+
+  /* 间距：4px 网格 */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* 圆角：纸张感，几乎是直角 */
+  --r-1: 2px;
+  --r-2: 4px;
+
+  /* 阴影：只有两级 */
+  --shadow-1: 0 1px 0 rgba(28, 39, 51, .06), 0 6px 16px -8px rgba(28, 39, 51, .22);
+  --shadow-2: 0 2px 0 rgba(28, 39, 51, .05), 0 24px 56px -20px rgba(19, 31, 49, .45);
+
+  /* 动效 */
+  --d-fast: 150ms;
+  --d-slow: 220ms;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  /* 尺寸 */
+  --hit: 40px;           /* 桌面端可点区域 */
+  --hit-touch: 44px;     /* 手机端可点区域 */
+  --rail-w: 64px;
+  --side-w: 272px;
+  --col: 46rem;          /* 对话正文栏宽，约 72 个西文字符 */
+  --focus: 0 0 0 2px var(--paper-2), 0 0 0 4px var(--navy);
+
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --d-fast: 0ms; --d-slow: 0ms; }
+}

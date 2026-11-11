@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>样稿 · 对话</title>
+<link rel="stylesheet" href="mock.css">
+<script src="shell.js"></script>
+</head>
+<body>
+<div class="app l2">
+  <script>shell({ cur: 1, back: true })</script>
+  <main class="main">
+    <section class="chat">
+      <header class="chat-head">
+        <div class="in">
+          <div class="ttl">
+            <div class="kicker"><span>记录</span></div>
+            <h2 title="双击重命名">第 45 周周报汇总</h2>
+          </div>
+          <div class="tools">
+            <button class="btn ghost sm">步骤记录</button>
+            <button class="btn ghost sm">命令 <kbd>⌘K</kbd></button>
+          </div>
+        </div>
+        <div class="chat-meta">
+          <span>工作目录<b class="mono">D:\工作区\周报</b></span>
+          <span>分区<b>周报</b></span>
+          <span>会话状态<b style="color:var(--ok)">进行中</b></span>
+          <span>消息<b class="mono">12</b></span>
+          <span>权限<b>标准 · 需确认</b></span>
+          <span class="right">
+            <label class="switch" title="打开后本会话的所有操作（包括删除、运行命令）都不再询问"><i></i>完全放行</label>
+            <span style="display:inline-flex;align-items:center;gap:6px"><span class="dot run"></span>已连接</span>
+          </span>
+        </div>
+      </header>
+
+      <div class="msgs">
+        <div class="col">
+          <button class="btn ghost sm older">加载更早的消息</button>
+
+          <article class="entry user">
+            <div class="mg"><span class="who">交办</span><span class="at">10:31</span></div>
+            <div class="bd">
+              把这周六个科室的周报合成一份，按“重点工作、存在问题、下周计划”三栏列出来，缺报的单独标出。
+              <div class="chips"><span class="chip"><span class="ic s i-folder"></span>周报/第45周</span><span class="chip"><span class="ic s i-spark"></span>周报汇总</span></div>
+            </div>
+          </article>
+
+          <article class="entry">
+            <div class="mg"><span class="who">Claude</span><span class="at">10:32</span></div>
+            <div class="bd">
+              <button class="fold open"><span class="ic s i-chev"></span>做了 3 步</button>
+              <ol class="steps">
+                <li><span class="k">01</span><span class="nm">查找文件</span><code>周报/第45周/*.docx</code></li>
+                <li><span class="k">02</span><span class="nm">读取</span><code>周报/第45周/办公室.docx 等 5 个文件</code></li>
+                <li><span class="k">03</span><span class="nm">写入</span><code>周报/第45周/汇总.md</code></li>
+              </ol>
+              <div class="md">
+                <p>六个科室里收到了五份，<strong>档案室本周缺报</strong>。汇总已经写到 <code>周报/第45周/汇总.md</code>，要点如下：</p>
+                <table>
+                  <tr><th>科室</th><th>重点工作</th><th>存在问题</th></tr>
+                  <tr><td>办公室</td><td>年度总结框架定稿</td><td>两个部门材料未交</td></tr>
+                  <tr><td>财务科</td><td>三季度经费使用表</td><td>差旅报销积压 11 笔</td></tr>
+                  <tr><td>后勤科</td><td>供暖设备检修完成</td><td>—</td></tr>
+                </table>
+                <h3>下周计划</h3>
+                <ul><li>办公室：周三前收齐年度总结材料</li><li>财务科：清完积压报销</li></ul>
+              </div>
+              <div class="info"><span>42 秒 · $0.0816</span><button class="btn ghost sm" title="Claude 会把这次的做法整理成一条经验笔记，存进团队知识库"><span class="ic s i-book"></span>沉淀成经验</button></div>
+            </div>
+          </article>
+
+          <article class="entry user">
+            <div class="mg"><span class="who">交办</span><span class="at">10:40</span></div>
+            <div class="bd">好，把汇总提交到仓库。</div>
+          </article>
+
+          <article class="entry">
+            <div class="mg"><span class="who">Claude</span><span class="at">10:41</span></div>
+            <div class="bd">
+              <button class="fold open"><span class="ic s i-chev"></span>思考</button>
+              <div class="think">提交前先看一下有没有别的未提交改动，只提交汇总这一个文件，然后推送。推送会改动远端，需要先确认。</div>
+              <button class="fold"><span class="ic s i-chev"></span>做了 2 步</button>
+              <div class="live"><b><i></i><i></i><i></i></b>等待确认</div>
+            </div>
+          </article>
+
+          <div class="slip">
+            <div class="hd">
+              <div class="kick">待确认</div>
+              <h4>运行命令</h4>
+            </div>
+            <pre>git push origin main</pre>
+            <div class="acts">
+              <button class="btn"><span class="ic i-x"></span>拒绝</button>
+              <button class="btn primary"><span class="ic i-check"></span>同意</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="col">
+          <div class="ask">
+            <div class="hd"><span>Claude 想问你</span><b>1 / 2</b></div>
+            <div class="q">缺报的档案室要怎么处理？</div>
+            <button class="opt on"><kbd>1</kbd><span><span class="l">单列一栏“未报送”（推荐）</span><span class="d">汇总里保留位置，方便补交后填上</span></span></button>
+            <button class="opt"><kbd>2</kbd><span><span class="l">直接略过</span><span class="d">汇总里不出现档案室</span></span></button>
+            <label class="opt"><kbd>3</kbd><input placeholder="其他：自己写一个答案…"></label>
+            <div class="ft">
+              <button class="btn ghost sm">跳过，让 Claude 自己决定</button>
+              <span class="hint">按 1~3 选择 · 回车下一题</span>
+              <button class="btn primary sm">下一题<span class="ic s i-chev"></span></button>
+            </div>
+          </div>
+          <div class="cbox">
+            <div class="chips"><span class="chip"><span class="ic s i-file"></span>周报/第45周/汇总.md<span class="ic s i-x"></span></span></div>
+            <textarea rows="1" placeholder="写下要交给 Claude 的事"></textarea>
+            <div class="cbar">
+              <button class="tbtn" title="从文件库选文件或文件夹（也可以打 @）"><span class="ic i-file"></span><span>引用文件</span></button>
+              <button class="tbtn" title="把这台电脑上的文件交给 Claude"><span class="ic i-pc"></span><span>本机文件</span></button>
+              <button class="tbtn"><span class="ic i-spark"></span><span>技能</span></button>
+              <span class="sp"></span>
+              <span class="hint">Enter 发送 · Shift+Enter 换行</span>
+              <button class="send" title="发送"><span class="ic i-up"></span></button>
+            </div>
+          </div>
+          <div class="foot-note">Claude 在台式机上干活，重要的改动请再核对一遍</div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
