@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import guard
 import kb
 import sections
+import sdk_runner
 import skills_api
 import usage
 from approvals import APPROVAL_TIMEOUT, pending_for, questions_for
@@ -62,6 +63,28 @@ def _cmd_rules(cmds) -> list[str]:
         if cmd and not any(c in cmd for c in "()\n"):
             rules += [f"Bash({cmd})", f"Bash({cmd}:*)"]
     return rules
+
+
+def runner_mode() -> str:
+    """运行方式：cli（每轮起一个 claude 进程，默认）/ sdk（claude-agent-sdk 常驻会话）。管理员设置 > 环境变量 RUNNER_MODE > cli；其他值按 cli。"""
+    raw = get_setting("runner_mode", None)
+    if raw is None:
+        raw = os.environ.get("RUNNER_MODE")
+    mode = str(raw or "").strip().lower()
+    return mode if mode in ("cli", "sdk") else "cli"
+
+
+def sdk_idle_seconds() -> int:
+    """sdk 常驻客户端空闲多久后关掉：管理员设置 > 环境变量 SDK_IDLE_SECONDS > 600；限制在 30~86400。"""
+    try:
+        default = int(os.environ.get("SDK_IDLE_SECONDS") or 600)
+    except ValueError:
+        default = 600
+    try:
+        n = int(get_setting("sdk_idle_seconds", default))
+    except (TypeError, ValueError):
+        n = default
+    return max(30, min(86400, n))
 
 
 def bash_allow_rules() -> list[str]:
@@ -190,6 +213,54 @@ def _guard_settings(sess: dict, owner: dict) -> dict:
     return {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": command, "timeout": 20}]}]}}
 
 
+def _mcp_center(sess: dict) -> dict:
+    """外部工具服务 approval_mcp.py 的 stdio 配置（权限确认 + 技能、知识库工具）。"""
+    return {
+        "command": sys.executable,
+        "args": [str(BASE / "approval_mcp.py")],
+        "env": {
+            "CENTER_URL": f"http://127.0.0.1:{PORT}",
+            "CENTER_TOKEN": INTERNAL_TOKEN,
+            "CENTER_SESSION": sess["id"],
+            "PYTHONUTF8": "1",
+        },
+    }
+
+
+def _perm_plan(sess: dict, owner: dict) -> tuple[str, list[str], list[str]]:
+    """三个权限档位：返回 (档位 bypass/strict/standard, 自动放行名单, ask 规则)；cli 和 sdk 两种运行方式共用。"""
+    if sess["bypass"] and can_bypass(owner):
+        return "bypass", [], []
+    if perm_mode() == "strict":
+        # 严格：只读命令 + 白名单自动放行；改文件也要确认
+        return "strict", READ_TOOLS + SAFE_BASH + SKILL_TOOLS + bash_allow_rules() + EDIT_TOOLS, []
+    # 标准：读、改、运行命令都自动放行，只有危险命令走确认（ask 规则优先于 allow）
+    auto = READ_TOOLS + ["Bash", "PowerShell", "NotebookEdit", "MultiEdit"] + EDIT_TOOLS + SKILL_TOOLS
+    return "standard", auto, _cmd_rules(get_setting("ask_cmds", DEFAULT_ASK_CMDS))
+
+
+def build_sdk_spec(claude_bin: str, sess: dict, owner: dict, extra_dirs: list[Path]) -> "sdk_runner.TurnSpec":
+    """sdk 运行方式：和 build_command 同一套名单和规则，装进 TurnSpec。只写提示词文件，不写 settings/guard/mcp 配置文件。"""
+    level, auto, ask = _perm_plan(sess, owner)
+    plugin = skills_api.plugin_dir_for(owner)
+    return sdk_runner.TurnSpec(
+        sid=sess["id"], owner_id=owner["id"], cli_path=claude_bin,
+        cwd=sess.get("work_dir") or str(FILE_ROOT),
+        add_dirs=list(dict.fromkeys(str(p) for p in extra_dirs)),
+        hint_file=str(_hint_file(sess, owner)),
+        # 外部服务里的 ask_user / approve 在 sdk 模式下由进程内工具和 can_use_tool 代替，对模型隐藏
+        disallowed=["AskUserQuestion", *_deny_rules(owner), "mcp__center__approve", "mcp__center__ask_user"],
+        allowed=["mcp__projector__ask_user" if t == "mcp__center__ask_user" else t for t in auto],
+        bypass=level == "bypass", ask_rules=ask if level == "standard" else [],
+        mcp_center=_mcp_center(sess),
+        plugin_dir=str(plugin) if plugin else None,
+        resume=sess["claude_session"] or None,
+        policy=lambda: guard_policy(owner),
+        timeout=TASK_TIMEOUT,
+        log_path=str(LOGS / f"claude_{sess['id']}.log"),
+    )
+
+
 def build_command(claude_bin: str, sess: dict, owner: dict, extra_dirs: list[Path]) -> list[str]:
     cmd = [
         claude_bin, "-p",
@@ -204,29 +275,16 @@ def build_command(claude_bin: str, sess: dict, owner: dict, extra_dirs: list[Pat
         cmd += ["--plugin-dir", str(plugin)]
     # 工具服务（权限确认 + 技能工具）每次都加载，完全放行时也能用技能工具
     mcp_config = DATA / "mcp" / f"{sess['id']}.json"
-    mcp_config.write_text(json.dumps({"mcpServers": {"center": {
-        "command": sys.executable,
-        "args": [str(BASE / "approval_mcp.py")],
-        "env": {
-            "CENTER_URL": f"http://127.0.0.1:{PORT}",
-            "CENTER_TOKEN": INTERNAL_TOKEN,
-            "CENTER_SESSION": sess["id"],
-            "PYTHONUTF8": "1",
-        },
-    }}}), encoding="utf-8")
+    mcp_config.write_text(json.dumps({"mcpServers": {"center": _mcp_center(sess)}}), encoding="utf-8")
     cmd += ["--mcp-config", str(mcp_config)]
     settings_data = _guard_settings(sess, owner)   # 三个档位都挂文件隔离钩子（钩子在权限判断之前执行，放行规则挡不住它）
     settings = DATA / "mcp" / f"settings_{sess['id']}.json"
-    if sess["bypass"] and can_bypass(owner):
+    level, auto, ask = _perm_plan(sess, owner)
+    if level == "bypass":
         cmd += ["--permission-mode", "bypassPermissions"]
-    elif perm_mode() == "strict":
-        # 严格：只读命令 + 白名单自动放行；改文件也要确认
-        auto = READ_TOOLS + SAFE_BASH + SKILL_TOOLS + bash_allow_rules() + EDIT_TOOLS
-        cmd += ["--permission-prompt-tool", "mcp__center__approve", "--allowedTools", *auto]
     else:
-        # 标准：读、改、运行命令都自动放行，只有危险命令走确认（ask 规则优先于 allow）
-        settings_data["permissions"] = {"ask": _cmd_rules(get_setting("ask_cmds", DEFAULT_ASK_CMDS))}
-        auto = READ_TOOLS + ["Bash", "PowerShell", "NotebookEdit", "MultiEdit"] + EDIT_TOOLS + SKILL_TOOLS
+        if level == "standard":
+            settings_data["permissions"] = {"ask": ask}   # 标准：只有危险命令走确认（ask 规则优先于 allow）
         cmd += ["--permission-prompt-tool", "mcp__center__approve", "--allowedTools", *auto]
     settings.write_text(json.dumps(settings_data, ensure_ascii=False), encoding="utf-8")
     cmd += ["--settings", str(settings)]
@@ -320,6 +378,7 @@ class Run:
         self.sid = sid
         self.owner_id = owner_id
         self.proc: subprocess.Popen | None = None
+        self.stop_fn = None   # sdk 模式下没有子进程句柄，停止靠它
         self.text = ""
         self.thinking = ""   # 当前这条消息的思考内容，只在实时快照里用，不写进 messages
         self.tools: list[dict] = []
@@ -372,6 +431,9 @@ def _begin_turn(sess: dict, text: str, author: dict, refs: list[str] | None = No
     sid = sess["id"]
     if sid in RUNS:
         raise HTTPException(409, "这个会话还有任务在进行，请等它完成或先停止")
+    sdk_mode = runner_mode() == "sdk"
+    if sdk_mode and (reason := sdk_runner.availability()):
+        raise HTTPException(500, sdk_runner.unavailable_message(reason))   # 放在登记 RUNS 之前，不留残余状态
     owner = get_user(sess["user_id"]) or author
     refs = refs or []
     cwd = sess.get("work_dir") or str(FILE_ROOT)
@@ -399,7 +461,11 @@ def _begin_turn(sess: dict, text: str, author: dict, refs: list[str] | None = No
         db("INSERT OR REPLACE INTO active_runs (session_id, user_id, started) VALUES (?,?,?)",
            (sid, sess["user_id"], time.time()))
         add_message(sid, "user", text, meta)
-        cmd = build_command(claude_bin, sess, owner, extra)
+        if sdk_mode:
+            cmd, spec = [], build_sdk_spec(claude_bin, sess, owner, extra)
+            run.stop_fn = lambda: sdk_runner.request_stop(sid)
+        else:
+            cmd, spec = build_command(claude_bin, sess, owner, extra), None
         action_text = KB_ACTIONS[action][1] if action else text
         if action:
             sec = sections.active_name_for_session(db("SELECT section_id FROM sessions WHERE id=?", (sid,), one=True))
@@ -411,7 +477,10 @@ def _begin_turn(sess: dict, text: str, author: dict, refs: list[str] | None = No
         RUNS.pop(sid, None)  # 任何一步失败都要清掉，否则会话一直显示“进行中”
         _clear_active(sid)
         raise
-    asyncio.create_task(_drive(run, prompt, cmd, cwd))
+    if spec:
+        asyncio.create_task(_drive(run, prompt, cmd, cwd, spec))
+    else:
+        asyncio.create_task(_drive(run, prompt, cmd, cwd))
     return run
 
 
@@ -519,17 +588,23 @@ def recover_runs() -> int:
     return len(rows)
 
 
-async def _drive(run: Run, prompt: str, cmd: list[str], cwd: str) -> None:
+async def _drive(run: Run, prompt: str, cmd: list[str], cwd: str, spec=None) -> None:
     loop = asyncio.get_running_loop()
 
     def emit(ev):
         loop.call_soon_threadsafe(_on_event, run, ev)
 
     started = time.time()
-    try:
-        final = await asyncio.to_thread(run_claude, run, prompt, cmd, cwd, emit)
-    except Exception as e:
-        final = {"is_error": True, "result": f"启动 claude 失败：{e}"}
+    if spec is not None:
+        try:
+            final = await sdk_runner.run_turn(run, prompt, spec, lambda ev: _on_event(run, ev))
+        except Exception as e:
+            final = {"is_error": True, "result": f"sdk 运行出错：{e}。" + sdk_runner.UNAVAILABLE_HINT}
+    else:
+        try:
+            final = await asyncio.to_thread(run_claude, run, prompt, cmd, cwd, emit)
+        except Exception as e:
+            final = {"is_error": True, "result": f"启动 claude 失败：{e}"}
     await asyncio.sleep(0)  # 让线程里排队的事件先处理完
     try:
         if final.get("session_id"):
@@ -587,12 +662,15 @@ async def stop_session(sid: str, user: dict = Depends(current_user)):
     if dropped:
         add_message(sid, "event", cancelled_note(dropped, "已停止"), {"queue_cancelled": True})
     run = RUNS.get(sid)
-    if run and run.proc:
+    if run and (run.proc or run.stop_fn):
         run.stopped = True
         for a in pending_for(sid) + questions_for(sid):
             if not a["future"].done():
                 a["future"].set_result((False, "用户停止了任务"))
-        _kill_tree(run.proc)
+        if run.stop_fn:
+            run.stop_fn()
+        else:
+            _kill_tree(run.proc)
     return {"ok": True}
 
 
@@ -605,3 +683,11 @@ async def cancel_queued(sid: str, qid: int, user: dict = Depends(current_user)):
     push_session(sid)
     dispatch_queue()
     return {"ok": True}
+
+
+async def sdk_close_session(sid: str) -> None:
+    """会话被删时关掉它的 sdk 常驻客户端；失败只记日志，不影响删除。"""
+    try:
+        await sdk_runner.close_session(sid)
+    except Exception:
+        usage.log_failure(sid, "sdk_close")

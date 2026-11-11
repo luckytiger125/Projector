@@ -11,3 +11,7 @@ rem 用 DeepSeek 等第三方模型、且没有设成系统环境变量时，去
 rem set "ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic"
 rem set "ANTHROPIC_AUTH_TOKEN=你的 DeepSeek API Key"
 rem set "ANTHROPIC_MODEL=deepseek-chat"
+
+rem 运行方式：cli=每轮起一个 claude 进程（默认），sdk=常驻会话，需先 pip install -r requirements-sdk.txt
+rem set "RUNNER_MODE=sdk"
+rem set "SDK_IDLE_SECONDS=600"

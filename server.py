@@ -10,6 +10,7 @@
   sessions_api.py 会话视图和接口
   auth_api.py     登录、账号、权限档位设置
 """
+import asyncio
 import json
 import socket
 import sys
@@ -28,6 +29,7 @@ import events
 import files_api
 import kb
 import runner
+import sdk_runner
 import sections
 import sessions_api
 import skills_api
@@ -35,10 +37,29 @@ import usage
 from store import BASE, DISCOVERY_PORT, FILE_ROOT, KB_ROOT, PORT, VERSION, current_user, db, find_claude, first_admin, hash_password
 
 
+async def _sdk_idle_loop() -> None:
+    while True:
+        await asyncio.sleep(30)
+        try:
+            await sdk_runner.close_idle()
+        except Exception:
+            usage.log_failure("-", "sdk_idle")
+
+
 @asynccontextmanager
 async def lifespan(_app):
     runner.dispatch_queue()   # 事件循环起来了：把重启前还排着的消息接着开始
+    idle_task = asyncio.create_task(_sdk_idle_loop())   # sdk 模式：定期关掉空闲的常驻客户端
     yield
+    idle_task.cancel()
+    try:
+        await idle_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await sdk_runner.close_all()
+    except Exception:
+        usage.log_failure("-", "sdk_close_all")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -157,6 +178,11 @@ def main() -> None:
     print(f"  工作目录 {FILE_ROOT}")
     print(f"  知识库 {KB_ROOT}")
     print(f"  claude：{claude_bin or '没找到！请安装 Claude Code，或在 config.bat 里设置 CLAUDE_BIN'}")
+    if runner.runner_mode() == "sdk":
+        reason = sdk_runner.availability()
+        print("  运行方式：sdk（常驻会话）" + (f"    不可用：{reason}" if reason else ""))
+    else:
+        print("  运行方式：cli")
     print(f"  Office 预览：{files_api.SOFFICE or '没装 LibreOffice，PPT 等只能用本机程序打开'}")
     threading.Thread(target=discovery_responder, daemon=True).start()
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")

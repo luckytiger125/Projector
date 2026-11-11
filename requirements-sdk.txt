@@ -1,0 +1,2 @@
+# 可选：sdk 运行方式（RUNNER_MODE=sdk）才需要
+claude-agent-sdk>=0.2.180,<0.3

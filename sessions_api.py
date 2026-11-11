@@ -7,9 +7,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
+import anyio.from_thread
+
 import files_api
+import runner
 import sections
 import skills_api
+import usage
 from approvals import approval_public, pending_for, questions_for
 from events import lock as events_lock
 from events import broadcast, current_seq, push_session
@@ -254,6 +258,10 @@ def delete_session(sid: str, user: dict = Depends(current_user)):
         files_api.move_to_trash(ws, user, f"删除会话 {s['title']}")
     for f in (f"{sid}.json", f"hint_{sid}.txt", f"settings_{sid}.json", f"guard_{sid}.json"):
         (DATA / "mcp" / f).unlink(missing_ok=True)
+    try:   # 关掉 sdk 常驻客户端：它的状态属于事件循环线程，所以从线程池函数里回到事件循环去做；失败不影响删除
+        anyio.from_thread.run(runner.sdk_close_session, sid)
+    except Exception:
+        usage.log_failure(sid, "sdk_close")
     broadcast({"type": "session_deleted", "session_id": sid}, s["user_id"])
     return {"ok": True}
 

@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 import files_api
-from runner import DEFAULT_ASK_CMDS, DEFAULT_BASH_ALLOW, RUNS, SAFE_BASH, dispatch_queue, max_concurrent, perm_mode
+import sdk_runner
+from runner import (DEFAULT_ASK_CMDS, DEFAULT_BASH_ALLOW, RUNS, SAFE_BASH, dispatch_queue, max_concurrent, perm_mode,
+                    runner_mode, sdk_idle_seconds)
 from store import (AVATARS, DATA, PORT, VERSION, adopt_orphans, can_bypass, check_password, current_user, db, first_admin,
                    get_setting, get_user, hash_password, is_local, issue_token, require_admin, set_auth_cookie, set_setting,
                    user_public, user_ws_dir, clear_auth_cookie, _token_from)
@@ -218,6 +220,8 @@ class SettingsBody(BaseModel):
     bash_allow: list[str] | None = None
     ask_cmds: list[str] | None = None
     max_concurrent: int | None = None   # 同时运行的 Claude 进程数，1~16
+    runner_mode: str | None = None      # cli / sdk
+    sdk_idle_seconds: int | None = None  # sdk 常驻客户端空闲多久后关掉，30~86400
 
 
 def _clean_cmds(cmds: list[str]) -> list[str]:
@@ -231,16 +235,21 @@ def _clean_cmds(cmds: list[str]) -> list[str]:
 
 @router.get("/api/admin/settings")
 def admin_get_settings(admin: dict = Depends(require_admin)):
+    sdk_error = sdk_runner.availability()
     return {"perm_mode": perm_mode(), "bash_allow": get_setting("bash_allow", DEFAULT_BASH_ALLOW),
             "ask_cmds": get_setting("ask_cmds", DEFAULT_ASK_CMDS), "safe": [r[5:-1] for r in SAFE_BASH],
             "default_ask": DEFAULT_ASK_CMDS, "default_allow": DEFAULT_BASH_ALLOW,
-            "max_concurrent": max_concurrent()}
+            "max_concurrent": max_concurrent(),
+            "runner_mode": runner_mode(), "sdk_available": sdk_error is None, "sdk_error": sdk_error or "",
+            "sdk_idle_seconds": sdk_idle_seconds(), "sdk_clients": sdk_runner.client_count()}
 
 
 @router.put("/api/admin/settings")
 async def admin_put_settings(body: SettingsBody, admin: dict = Depends(require_admin)):
     if body.max_concurrent is not None and not 1 <= body.max_concurrent <= 16:
         raise HTTPException(400, "同时运行的任务数要在 1 到 16 之间")
+    if body.sdk_idle_seconds is not None and not 30 <= body.sdk_idle_seconds <= 86400:
+        raise HTTPException(400, "常驻会话的空闲关闭时间要在 30 到 86400 秒之间")
     if body.perm_mode in ("standard", "strict"):
         set_setting("perm_mode", body.perm_mode)
     if body.bash_allow is not None:
@@ -250,4 +259,11 @@ async def admin_put_settings(body: SettingsBody, admin: dict = Depends(require_a
     if body.max_concurrent is not None:
         set_setting("max_concurrent", body.max_concurrent)
         dispatch_queue()   # 调大上限后，排着的消息马上有位置
+    if body.sdk_idle_seconds is not None:
+        set_setting("sdk_idle_seconds", body.sdk_idle_seconds)
+    if body.runner_mode is not None and body.runner_mode.strip().lower() in ("cli", "sdk"):
+        mode = body.runner_mode.strip().lower()
+        set_setting("runner_mode", mode)
+        if mode == "cli":
+            await sdk_runner.close_idle(now=float("inf"))   # 切回 cli：把空闲的常驻客户端都关掉（在跑的那一轮跑完后自己关）
     return admin_get_settings(admin)
