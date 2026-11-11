@@ -40,8 +40,10 @@ describe("md 净化", () => {
     const html = md('<iframe src="//evil"></iframe><object data="x"></object><embed src="y"><svg onload="alert(1)"><script>1</script></svg>');
     expect(html).not.toMatch(/<iframe|<object|<embed|<script|onload/i);
   });
-  it("和老代码一致：用 DOMPurify 默认配置，<style> 标签不会被去掉（已知现状，见汇报）", () => {
-    expect(md("<p>a</p><style>p{color:red}</style>")).toContain("<style>");
+  it("去掉 <style>（防止回复里的 Markdown 注入全局样式）", () => {
+    expect(md("<p>a</p><style>p{color:red}</style>")).not.toContain("<style");
+    expect(md("<style>p{color:red}</style><p>a</p>")).not.toContain("<style");
+    expect(sanitizeHtml("<p>a</p><style>p{color:red}</style>")).toBe("<p>a</p>");
   });
   it("保留普通的 http 链接和 class、data- 属性（知识库链接要用）", () => {
     const d = dom(md('[a](https://example.com) <a class="wl" data-kb="笔记">笔记</a>'));

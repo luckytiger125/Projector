@@ -46,7 +46,7 @@ export async function showLogin(): Promise<void> {
 
 export interface LoginInput { username: string; password: string; password2?: string; displayName?: string }
 
-/** 登录或创建管理员。成功返回用户（已存好令牌、撤掉登录层），失败抛出带文案的 Error */
+/** 登录或创建管理员。成功返回用户（已存好令牌、撤掉登录层，调用方接着调 enterApp），失败抛出带文案的 Error */
 export async function submitLogin(input: LoginInput): Promise<User> {
   const username = input.username.trim();
   if (setupMode.value && input.password !== input.password2) throw new Error("两次密码不一样");
@@ -60,8 +60,7 @@ export async function submitLogin(input: LoginInput): Promise<User> {
   store.set("token", data.token);
   store.set("username", username);
   loginVisible.value = false;
-  me.value = data.user;
-  return data.user as User;
+  return data.user as User;   // me 由 enterApp 在重置各个 store 之后再设置
 }
 
 /** 退出登录（确认框由调用方负责）。出错也照样清掉本地状态 */
@@ -79,9 +78,7 @@ export async function bootstrapAuth(): Promise<User | null> {
   // 补种失败不拦着：401 时 api() 已经弹出登录页，其他错误（比如网络）继续往下走，/api/me 自己会处理
   await api("/api/session-cookie", { method: "POST" }).catch(() => {});
   try {
-    const u = await api<User>("/api/me");
-    me.value = u;
-    return u;
+    return await api<User>("/api/me");   // me 由 enterApp 在重置各个 store 之后再设置
   } catch { return null; }
 }
 

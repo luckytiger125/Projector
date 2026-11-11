@@ -60,7 +60,7 @@ async function kbLoad() {
   try { KB.data = await api("/api/kb" + qs); }
   catch { KB.data = await api("/api/kb"); }
   const count = KB.data.notes.filter(kbSectionMatch).length;
-  $("kbCnt").textContent = count > 1 ? count : "";
+  window.setKbCount?.(count > 1 ? count : 0);
   window.KBDATA = KB.data;
   kbSectionBar();
   window.onKbLoaded?.();
@@ -101,7 +101,6 @@ window.kbRelOf = kbRelOf;  // 经典脚本里顶层函数会自动挂 window，�
 
 async function openKB(view = null) {
   $("kbBox").classList.add("show");
-  $("side").classList.remove("open");
   if (!KB.data) $("kbHome").innerHTML = `<div class="kb-loading">${orb(40, "busy")}</div>`;
   try { await kbLoad(); } catch (e) { return toast(e.message, "err"); }
   kbTab(view || KB.view);
@@ -326,7 +325,7 @@ async function kbShow(path) {
     [{ label: "取消" }, { label: "删除", danger: true, onClick: async () => {
       await post("/api/kb/delete", { path: n.path }); KB.sel = null; await kbLoad(); kbFilterBar(); kbRenderList(); kbEmptyView(); toast("已删除，可以在回收站里恢复", "ok");
     } }]);
-  if ($("kvRef")) $("kvRef").onclick = () => { addRef({ abs: n.abs, name: n.title, dir: false }); kbClose(); toast("已引用到对话", "ok"); $("input").focus(); };
+  if ($("kvRef")) $("kvRef").onclick = () => { addRef({ abs: n.abs, name: n.title, dir: false }); kbClose(); toast("已引用到对话", "ok"); composerInput.focus(); };
   if ($("kvOpenSrc")) $("kvOpenSrc").onclick = () => showFiles(n.source_abs || n.source);
   if ($("kvRefresh")) $("kvRefresh").onclick = () => kbOrganize([n.source_abs || n.source], n.title);
   $("kbView").querySelector("[data-ksess]")?.addEventListener("click", ev => { if (kbClose()) openSession(ev.currentTarget.dataset.ksess); });
@@ -745,7 +744,3 @@ window.kbFileBanner = kbFileBanner;
 $("kbLogo").innerHTML = icon("book", 19);
 $("kbQIcon").innerHTML = icon("search", 15);
 $("kbNew").innerHTML = icon("plus", 14) + "新建笔记";
-$("kbNavIcon").innerHTML = icon("book", 16);
-$("kbBtn").innerHTML = icon("book");
-$("kbNav").onclick = () => openKB("home");
-$("kbBtn").onclick = () => openKB("home");

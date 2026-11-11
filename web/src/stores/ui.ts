@@ -1,4 +1,4 @@
-// 界面层状态：提示条、通用对话框、主题、命令面板、手机上的左栏抽屉。
+// 界面层状态：提示条、通用对话框、主题、命令面板。
 import { signal } from "@preact/signals";
 import type { ComponentChildren } from "preact";
 import { store } from "./auth";
@@ -27,23 +27,57 @@ export interface DialogButton {
   primary?: boolean;
   danger?: boolean;
   icon?: string;
-  /** 返回 false 则不关闭；抛错会把错误文案显示在对话框里（.err 元素）或提示条里 */
-  onClick?: () => unknown | Promise<unknown>;
+  /** 返回 false 则不关闭；抛错会把错误文案显示在对话框里（.err 元素）或提示条里。输入框模式下参数是输入框的内容 */
+  onClick?: (value: string) => unknown | Promise<unknown>;
 }
 export interface DialogSpec {
   title: string;
-  /** 内容：组件，或（过渡期老代码）一段 HTML 字符串 */
+  /** 内容：组件、纯文字，或（过渡期老代码）一段 HTML 字符串 */
   body: ComponentChildren | { html: string };
   buttons: DialogButton[];
   wide: boolean;
+  /** 危险操作：顶边用朱砂色 */
+  danger?: boolean;
+  /** 带一个文字输入框（回车 = 最后一个主按钮） */
+  input?: { value: string; placeholder?: string };
+  /** 用户用 Esc、点遮罩或右上角关掉时调用（程序里 closeDialog() 关闭不调用） */
+  onDismiss?: () => void;
 }
 export const dialog = signal<DialogSpec | null>(null);
 
-export function openDialog(title: string, body: DialogSpec["body"], buttons: DialogButton[] = [], wide = false): void {
-  dialog.value = { title, body, buttons, wide };
+export function openDialog(title: string, body: DialogSpec["body"], buttons: DialogButton[] = [], wide = false, extra: Partial<DialogSpec> = {}): void {
+  dialog.peek()?.onDismiss?.();   // 被新对话框顶掉的，等于被取消
+  dialog.value = { title, body, buttons, wide, ...extra };
 }
+/** 程序关闭 */
 export function closeDialog(): void {
   dialog.value = null;
+}
+/** 用户关闭（Esc、遮罩、关闭按钮） */
+export function dismissDialog(): void {
+  const d = dialog.peek();
+  dialog.value = null;
+  d?.onDismiss?.();
+}
+
+/** 确认框：点确认返回 true，取消、Esc、点外面返回 false */
+export function confirmBox(o: { title: string; message: string; ok?: string; cancel?: string; danger?: boolean }): Promise<boolean> {
+  return new Promise((resolve) => {
+    openDialog(o.title, o.message, [
+      { label: o.cancel || "取消", onClick: () => resolve(false) },
+      { label: o.ok || "确定", primary: !o.danger, danger: o.danger, onClick: () => resolve(true) },
+    ], false, { danger: o.danger, onDismiss: () => resolve(false) });
+  });
+}
+
+/** 输入框：点确认返回输入的内容，取消返回 null */
+export function promptBox(o: { title: string; message?: string; value?: string; placeholder?: string; ok?: string }): Promise<string | null> {
+  return new Promise((resolve) => {
+    openDialog(o.title, o.message || "", [
+      { label: "取消", onClick: () => resolve(null) },
+      { label: o.ok || "保存", primary: true, onClick: (v) => resolve(v) },
+    ], false, { input: { value: o.value || "", placeholder: o.placeholder }, onDismiss: () => resolve(null) });
+  });
 }
 
 // ---------- 主题 ----------
@@ -77,6 +111,5 @@ export function cycleTheme(): Theme {
   return next;
 }
 
-// ---------- 命令面板、手机抽屉 ----------
+// ---------- 命令面板 ----------
 export const paletteOpen = signal(false);
-export const drawerOpen = signal(false);

@@ -9,13 +9,13 @@
 // 本模块 import 时没有副作用；connect() 才会创建 EventSource。
 import { signal } from "@preact/signals";
 import { systemNotify } from "../lib/desktop";
-import { isCoveredBySnapshot, sessionEventSkips } from "../lib/seq";
+import { eventSessionId, isCoveredBySnapshot, sessionEventSkips } from "../lib/seq";
 import type { ServerEvent } from "../lib/types";
 import { replace } from "../router";
 import { onLoginRequired, refreshMe, token } from "./auth";
 import {
   applyApproval, applyApprovalDone, applyDelta, applyDeltaReset, applyMessage, applyQuestion, applyQuestionDone,
-  applyThinking, applyTool, current, reloadCurrent, resetChat, snapSeq, upsertSession,
+  applyThinking, applyTool, current, eventBuffer, reloadCurrent, setReplayHandler, shouldBuffer, resetChat, snapSeq, upsertSession,
 } from "./chat";
 import { listSeq, loadSessions, removeFromList, sessions } from "./sessions";
 
@@ -50,6 +50,7 @@ export function handleEvent(ev: ServerEvent): void {
   if (ev.type === "resync") return reloadAll();
 
   // 会话事件序号不大于详情快照的 seq：它的效果已经包含在快照里了，再应用会重复（比如 delta 文本）
+  if (shouldBuffer(eventSessionId(ev))) { eventBuffer.events.push(ev); return; }   // 正在取这个会话的快照：先存着，快照应用后重放
   if (isCoveredBySnapshot(ev, current.value, snapSeq.value)) return;
 
   if (ev.type === "session" && ev.session) {
@@ -91,6 +92,8 @@ export function handleEvent(ev: ServerEvent): void {
     default: break;   // 未知类型：老代码只是重渲染，状态不变
   }
 }
+
+setReplayHandler(handleEvent);
 
 // ---------- 连接 ----------
 

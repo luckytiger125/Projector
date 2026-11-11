@@ -1,8 +1,9 @@
 // Markdown 渲染：marked 输出一律交给 DOMPurify 净化后才能进 DOM。
-// 净化配置和老代码完全一致：DOMPurify.sanitize(marked.parse(text))，不传任何自定义选项。
+// 净化配置：DOMPurify 默认配置，再去掉 <style>（老代码没去，是收紧：回复里的 Markdown 不能注入全局样式）。
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
+const CONFIG = { FORBID_TAGS: ["style"] };
 let linkify: ((text: string) => string) | null = null;
 
 /** 注册“[[笔记名]] → 可点开的知识库链接”的预处理（知识库迁完之前由桥接层接老代码的 kbLinkify） */
@@ -17,12 +18,12 @@ export function escapeHtml(s: unknown): string {
 
 /** 净化一段 HTML（文件预览里的 HTML 类内容也走这里） */
 export function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html);
+  return DOMPurify.sanitize(html, CONFIG);
 }
 
 /** Markdown → 净化后的 HTML 字符串，可直接给 dangerouslySetInnerHTML */
 export function md(text: string | null | undefined): string {
   let src = text || "";
   if (linkify) src = linkify(src);
-  return DOMPurify.sanitize(marked.parse(src) as string);
+  return DOMPurify.sanitize(marked.parse(src) as string, CONFIG);
 }

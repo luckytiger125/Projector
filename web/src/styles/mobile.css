@@ -1,0 +1,64 @@
+/* 手机端（≤720px）：两级导航，弹层全屏。拆自 docs/design/mock.css */
+@media (max-width: 720px) {
+  .px .app { display: flex; flex-direction: column; }
+  .px .rail { flex: none; flex-direction: row; height: 48px; padding: 0 var(--s-2) 0 var(--s-3); gap: var(--s-2); }
+  .px .rail .seal { width: 26px; height: 26px; font-size: 14px; }
+  .px .rail .vert { writing-mode: horizontal-tb; font-size: var(--t-16); letter-spacing: .12em; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .px .rail .yr { display: none; }
+  .px .rail .m-only { display: grid; color: var(--on-navy); width: var(--hit-touch); height: var(--hit-touch); }
+  .px .rail .m-only:hover { background: rgba(242, 234, 214, .12); color: var(--on-navy); }
+  .px .m-tabs { display: flex; flex: none; background: var(--paper-1); border-bottom: 1px solid var(--hair-strong); }
+  .px .m-tabs a { flex: 1; text-align: center; height: var(--hit-touch); line-height: var(--hit-touch); font: 700 var(--t-14)/var(--hit-touch) var(--f-serif); letter-spacing: .14em; color: var(--ink-3); position: relative; }
+  .px .m-tabs a.on { color: var(--ink-1); }
+  .px .m-tabs a.on::after { content: ""; position: absolute; left: 24%; right: 24%; bottom: -1px; height: 3px; background: var(--vermilion); }
+  /* 第一级：值班目录或值班板，二选一显示；第二级：只显示正文 */
+  .px .app.l1 .side, .px .app.l1 .main { flex: 1; min-height: 0; border: 0; }
+  .px .app.l1[data-m="list"] .main, .px .app.l1[data-m="board"] .side, .px .app.l2 .side { display: none; }
+  .px .app.l2 .main { flex: 1; }
+  .px .side-head { padding: var(--s-3) var(--s-4) var(--s-2); }
+  .px .side-head .kicker, .px .side-head h2 { display: none; }
+  .px .row { height: 48px; }
+  .px .row .acts { display: none !important; }
+  .px .row:hover .tm { visibility: visible; }
+  .px .board { padding: var(--s-5) var(--s-4) var(--s-8); }
+  .px .masthead { grid-template-columns: 1fr; gap: var(--s-4); }
+  .px .masthead h1 { font-size: var(--t-28); }
+  .px .masthead .sub { font-size: var(--t-14); }
+  .px .facts { grid-template-columns: 1fr 1fr; gap: 2px var(--s-4); }
+  .px .facts div { min-width: 0; }
+  .px .cols { grid-template-columns: 1fr; gap: var(--s-6); margin-top: var(--s-6); }
+  .px .chat-head { padding: var(--s-3) var(--s-4) 0; }
+  .px .chat-head h2 { font-size: var(--t-20); }
+  .px .chat-head .kicker { display: none; }
+  .px .chat-head .in { align-items: center; gap: var(--s-2); padding-bottom: var(--s-2); }
+  .px .chat-meta { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; white-space: nowrap; gap: var(--s-4); }
+  .px .chat-meta .right { margin-left: 0; }
+  .px .msgs { padding: var(--s-4) var(--s-4) var(--s-4); }
+  .px .entry { grid-template-columns: 1fr; gap: var(--s-1); padding: var(--s-3) 0; }
+  .px .entry .mg { text-align: left; border: 0; padding: 0; display: flex; align-items: baseline; gap: var(--s-2); }
+  .px .entry .mg::after { display: none; }
+  .px .entry.user .bd { border-left: 2px solid var(--navy); padding-left: var(--s-3); }
+  .px .slip { margin-left: 0; }
+  .px .slip .acts .btn { flex: 1; height: var(--hit-touch); }
+  .px .composer { padding: 0 var(--s-2) var(--s-2); }
+  .px .cbar .hint, .px .tbtn span:not(.ic), .px .foot-note { display: none; }
+  .px .tbtn { width: var(--hit-touch); height: var(--hit-touch); justify-content: center; }
+  .px .send { width: var(--hit-touch); height: var(--hit-touch); }
+  .px .ask .ft .hint { display: none; }
+  .px .ask .ft { justify-content: space-between; }
+  .px .opt { padding: var(--s-3) var(--s-4); }
+  .px .opt kbd { display: none; }
+  .px .veil { padding: 0; position: fixed; z-index: 40; }
+  .px .sheet { width: 100%; height: 100%; border: 0; border-radius: 0; }
+  .px .sheet-head { padding: var(--s-2) var(--s-2) 0 var(--s-1); align-items: center; gap: var(--s-1); }
+  .px .sheet-head h3 { font-size: var(--t-20); }
+  .px .sheet-head .kicker { display: none; }
+  .px .m-back { display: grid; }
+  .px .sheet-head .x { display: none; }
+  .px .sheet-bar { margin: var(--s-1) var(--s-4) 0; flex-wrap: wrap; }
+  .px .sheet-bar .searchbox { width: 100%; order: -1; height: var(--hit); }
+  .px .icon-btn { width: var(--hit-touch); height: var(--hit-touch); }
+  /* 表格变成一行一张小卡 */
+  .px .dlg { align-self: end; width: 100%; border-radius: var(--r-2) var(--r-2) 0 0; }
+  .px .dlg .acts .btn { flex: 1; height: var(--hit-touch); }
+}

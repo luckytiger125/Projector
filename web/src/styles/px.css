@@ -1,0 +1,58 @@
+/* 新组件的公共样式：按钮、标签、输入框、小圆点。从 docs/design/mock.css 拆来，全部限定在 .px 里，
+   不影响还由老代码渲染的弹层（它们用 base.css / almanac.css 里同名的老类）。只用 tokens.css 的变量。 */
+.px { height: 100%; font: var(--t-14)/var(--lh-body) var(--f-sans); color: var(--ink-1); background: var(--paper-0); -webkit-font-smoothing: antialiased; }
+.px *, .px *::before, .px *::after { box-sizing: border-box; }
+.px button, .px input, .px textarea, .px select { font: inherit; color: inherit; }
+.px button { background: none; border: 0; padding: 0; cursor: pointer; }
+.px h1, .px h2, .px h3, .px h4, .px p, .px ul, .px ol, .px pre, .px dl, .px dd { margin: 0; }
+.px a { color: inherit; }
+.px :focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-1); }
+.px ::selection { background: var(--navy); color: var(--on-navy); }
+.px .mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.px [hidden] { display: none !important; }
+.px svg.ic { flex: none; }
+/* ── 按钮 ── */
+.px .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+  height: 36px; padding: 0 var(--s-4); border: 1px solid var(--hair-strong); border-radius: var(--r-1);
+  background: var(--paper-2); font-size: var(--t-14); white-space: nowrap;
+  transition: background var(--d-fast) var(--ease), border-color var(--d-fast) var(--ease), transform var(--d-fast) var(--ease);
+}
+.px .btn:hover { border-color: var(--ink-1); }
+.px .btn:active { transform: translateY(1px); }
+.px .btn.primary { background: var(--navy); border-color: var(--navy); color: var(--on-navy); }
+.px .btn.primary:hover { background: var(--navy-deep); }
+.px .btn.danger { background: var(--vermilion); border-color: var(--vermilion); color: #fff; }
+.px .btn.ghost { border-color: transparent; background: none; color: var(--ink-2); }
+.px .btn.ghost:hover { background: var(--navy-soft); color: var(--ink-1); }
+.px .btn.sm { height: 28px; padding: 0 var(--s-3); font-size: var(--t-13); }
+.px .btn.block { width: 100%; }
+.px .icon-btn { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-1); color: var(--ink-3); transition: background var(--d-fast), color var(--d-fast); }
+.px .icon-btn:hover { background: var(--navy-soft); color: var(--ink-1); }
+.px .link { color: var(--ink-1); border-bottom: 1px solid var(--hair-strong); transition: border-color var(--d-fast); }
+.px .link:hover { border-color: var(--ink-1); }
+.px kbd { font: 500 11px var(--f-mono); color: var(--ink-3); border: 1px solid var(--hair-strong); border-bottom-width: 2px; border-radius: var(--r-1); padding: 0 5px; background: var(--paper-2); }
+.px .tag { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 var(--s-2); font-size: var(--t-12); border: 1px solid var(--hair-strong); border-radius: var(--r-1); color: var(--ink-2); white-space: nowrap; }
+.px .tag.ok { color: var(--ok); border-color: currentColor; background: var(--ok-soft); }
+.px .tag.warn { color: var(--warn); border-color: currentColor; background: var(--warn-soft); }
+.px .tag.red { color: var(--vermilion); border-color: currentColor; background: var(--vermilion-soft); }
+.px .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-4); flex: none; }
+.px .dot.run { background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 1.8s infinite; }
+.px .dot.wait { background: var(--vermilion); }
+.px .dot.queue { background: var(--warn); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(46,107,94,.45); } 100% { box-shadow: 0 0 0 7px rgba(46,107,94,0); } }
+.px .field { display: block; }
+.px .field > span { display: block; font-size: var(--t-12); color: var(--ink-3); letter-spacing: .08em; margin-bottom: var(--s-1); }
+.px .input { width: 100%; height: var(--hit); padding: 0 var(--s-3); background: var(--paper-2); border: 1px solid var(--hair-strong); border-radius: var(--r-1); outline: none; transition: border-color var(--d-fast), box-shadow var(--d-fast); }
+.px .input:focus { border-color: var(--navy); box-shadow: 0 0 0 3px var(--navy-soft); }
+.px .input::placeholder, .px textarea::placeholder { color: var(--ink-4); }
+.px .searchbox { display: flex; align-items: center; gap: var(--s-2); height: 36px; padding: 0 var(--s-3); border: 1px solid var(--hair); border-radius: var(--r-1); background: var(--paper-2); color: var(--ink-3); }
+.px .searchbox:focus-within { border-color: var(--navy); }
+.px .searchbox input { flex: 1; min-width: 0; border: 0; background: none; outline: none; color: var(--ink-1); }
+
+/* 老的 .btn 带阴影、圆角和行高；新按钮不要这些 */
+.px .btn, .px .btn:hover, .px .btn.primary, .px .btn.primary:hover { box-shadow: none; line-height: normal; text-decoration: none; }
+.px .btn.danger { color: #fff; }
+.px .btn:disabled { opacity: .45; cursor: default; transform: none; }
+.px .m-tabs, .px .m-back { display: none; }
+#app { height: 100%; }

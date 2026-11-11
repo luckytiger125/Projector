@@ -16,10 +16,11 @@ export function onEnter(fn: (u: User) => void): () => void {
 
 /** 登录成功或启动取到用户后调用：重置所有状态，取分区和技能，连事件流（连上后第一次 open 会拉会话列表） */
 export function enterApp(user: User): void {
-  me.value = user;
+  // 先重置，再设 me：设 me 会触发路由同步去取当前网址对应的会话，不能被后面的重置清掉
   resetSessions();
   resetChat();
   resetComposer();
+  me.value = user;
   void loadSections();
   for (const fn of enterHooks) fn(user);
   connect();

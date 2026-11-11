@@ -1,0 +1,59 @@
+/* 外壳：竖栏、值班目录、用户菜单、对话框、提示条、命令面板、登录。拆自 docs/design/mock.css */
+/* ── 壳层 ── */
+.px .app { display: grid; grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr); height: 100vh; }
+.px .rail { background: var(--navy); color: var(--on-navy); display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: var(--s-5) 0; }
+.px .rail .seal { width: 32px; height: 32px; display: grid; place-items: center; background: var(--vermilion); color: #fff; font: 700 17px/1 var(--f-serif); border-radius: var(--r-1); }
+.px .rail .vert { writing-mode: vertical-rl; text-orientation: upright; font: 600 18px/1 var(--f-serif); letter-spacing: .34em; }
+.px .rail .yr { writing-mode: vertical-rl; font: 500 10px/1 var(--f-mono); letter-spacing: .2em; color: var(--on-navy-dim); }
+.px .rail .m-only { display: none; }
+.px .side { background: var(--paper-1); border-right: 1px solid var(--hair-strong); display: flex; flex-direction: column; min-height: 0; }
+.px .side-head { padding: var(--s-5) var(--s-4) var(--s-3); }
+.px .kicker { display: flex; justify-content: space-between; align-items: baseline; font: 600 11px/1.4 var(--f-sans); letter-spacing: .16em; color: var(--ink-3); text-transform: uppercase; }
+.px .side-head h2 { font: 700 var(--t-20)/var(--lh-tight) var(--f-serif); letter-spacing: .06em; margin: var(--s-1) 0 var(--s-4); padding-bottom: var(--s-3); border-bottom: 2px solid var(--rule); }
+.px .side-head .btn { margin-bottom: var(--s-2); }
+.px .nav { display: flex; gap: 1px; padding: 0 var(--s-4) var(--s-3); }
+.px .nav a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--s-2) 0; font-size: var(--t-12); color: var(--ink-2); text-decoration: none; border-radius: var(--r-1); transition: background var(--d-fast), color var(--d-fast); }
+.px .nav a:hover { background: var(--navy-soft); color: var(--ink-1); }
+.px .nav a.on { background: var(--navy); color: var(--on-navy); }
+.px .side-list { flex: 1; overflow-y: auto; padding: 0 var(--s-2) var(--s-4); }
+.px .grp { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-4) var(--s-2) var(--s-1); font: 600 11px/1.4 var(--f-sans); letter-spacing: .1em; color: var(--ink-3); }
+.px .grp::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+.px .grp .n { color: var(--ink-4); letter-spacing: 0; }
+.px .row { position: relative; display: flex; align-items: center; gap: var(--s-2); height: var(--hit); padding: 0 var(--s-2); border-radius: var(--r-1); cursor: pointer; transition: background var(--d-fast); }
+.px .row:hover { background: var(--navy-soft); }
+.px .row.on { background: var(--paper-2); box-shadow: inset 2px 0 0 var(--navy), 0 0 0 1px var(--hair); }
+.px .row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.px .row.unread .t { font-weight: 600; }
+.px .row .tm { font: 11px var(--f-mono); color: var(--ink-4); }
+.px .row .acts { position: absolute; right: var(--s-1); top: 4px; display: none; background: linear-gradient(90deg, transparent, var(--paper-1) 28%); padding-left: var(--s-6); }
+.px .row:hover .acts { display: flex; }
+.px .row:hover .tm { visibility: hidden; }
+.px .side-foot { border-top: 1px solid var(--hair-strong); padding: var(--s-3) var(--s-4); display: flex; align-items: center; gap: var(--s-3); }
+.px .ava { width: 32px; height: 32px; flex: none; display: grid; place-items: center; background: var(--navy); color: var(--on-navy); font: 600 14px var(--f-serif); border-radius: var(--r-1); }
+.px .side-foot .nm { font-weight: 600; line-height: 1.3; }
+.px .side-foot .rl { font-size: var(--t-12); color: var(--ink-3); line-height: 1.3; }
+.px .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative;
+  background-image: linear-gradient(var(--paper-grid) 1px, transparent 1px), linear-gradient(90deg, var(--paper-grid) 1px, transparent 1px); background-size: 24px 24px; }
+
+/* ── 对话框、提示、登录、命令面板 ── */
+.px .dlg { width: min(420px, 100%); background: var(--paper-2); border: 1px solid var(--hair-strong); border-top: 3px solid var(--navy); border-radius: var(--r-2); box-shadow: var(--shadow-2); padding: var(--s-5) var(--s-5) var(--s-4); animation: lift var(--d-slow) var(--ease) both; }
+.px .dlg.danger { border-top-color: var(--vermilion); }
+.px .dlg h4 { font: 700 var(--t-20)/var(--lh-tight) var(--f-serif); margin-bottom: var(--s-2); }
+.px .dlg p { color: var(--ink-2); }
+.px .dlg .acts { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-5); }
+.px .dlg label.chk { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-3); font-size: var(--t-13); color: var(--ink-2); }
+.px .toast { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 40px; padding: var(--s-2) var(--s-4); background: var(--navy); color: var(--on-navy); border-radius: var(--r-1); box-shadow: var(--shadow-2); font-size: var(--t-13); }
+.px .toast.ok .ic { color: #8FCBB8; }
+.px .toast.err { background: var(--vermilion); color: #fff; }
+.px .login { width: min(380px, 100%); background: var(--paper-2); border: 1px solid var(--hair-strong); border-radius: var(--r-2); box-shadow: var(--shadow-2); padding: var(--s-8) var(--s-6) var(--s-6); }
+.px .login h3 { font: 700 var(--t-28)/var(--lh-tight) var(--f-serif); margin: var(--s-2) 0 var(--s-1); }
+.px .login .sub { color: var(--ink-3); font-size: var(--t-13); padding-bottom: var(--s-4); margin-bottom: var(--s-5); border-bottom: 2px solid var(--rule); }
+.px .login .field { margin-bottom: var(--s-4); }
+.px .login .ft { margin-top: var(--s-4); text-align: center; font-size: var(--t-12); color: var(--ink-3); }
+.px .palette { width: min(560px, 100%); background: var(--paper-2); border: 1px solid var(--hair-strong); border-radius: var(--r-2); box-shadow: var(--shadow-2); overflow: hidden; }
+.px .palette .pq { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-4); height: 52px; border-bottom: 1px solid var(--hair-strong); color: var(--ink-3); }
+.px .palette .pq input { flex: 1; border: 0; outline: none; background: none; font-size: var(--t-16); color: var(--ink-1); }
+.px .palette .it { display: flex; align-items: center; gap: var(--s-3); height: var(--hit); padding: 0 var(--s-4); }
+.px .palette .it.on { background: var(--navy); color: var(--on-navy); }
+.px .palette .it .ic { opacity: .7; }
+.px .palette .gh { padding: var(--s-2) var(--s-4) 2px; font: 600 11px var(--f-mono); letter-spacing: .14em; color: var(--ink-3); }

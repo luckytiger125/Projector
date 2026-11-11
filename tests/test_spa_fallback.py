@@ -17,7 +17,7 @@ def test_spa_pages(client, path):
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     assert "no-cache" in r.headers["cache-control"]
-    assert '<div class="app" id="shell">' in r.text
+    assert '<div id="app"></div>' in r.text   # 外壳由 Preact 挂载在这里（阶段三起；之前是静态的 <div class="app" id="shell">）
 
 
 def test_api_unknown_is_404(client):

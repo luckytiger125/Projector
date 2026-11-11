@@ -132,7 +132,7 @@
       groups.map((g, i) => `<details class="grp" data-uid="${g.u.id}" style="animation-delay:${i * 40}ms">
         <summary>${avatarEl(g.u.avatar, 34)}<div><b>${esc(g.u.display_name)}</b><div class="muted" style="font-size:12.5px">${esc(roleName[g.u.role] || g.u.role)} · ${g.list.length} 个会话
           ${g.list.some(s => s.running) ? ' · <span style="color:var(--accent)">有任务在进行</span>' : ""}${g.list.some(s => s.pending) ? ' · <span style="color:var(--amber)">有待确认</span>' : ""}</div></div>${icon("chevD", 18)}</summary>
-        <div class="list">${g.list.map(s => sessRow(s, true)).join("") || '<div class="empty-note" style="padding:4px 10px">没有会话</div>'}</div>
+        <div class="list">${g.list.map(s => sessRow(s)).join("") || '<div class="empty-note" style="padding:4px 10px">没有会话</div>'}</div>
       </details>`).join("");
     box().querySelectorAll(".sess").forEach(row => row.onclick = () => {
       $("adminBox").classList.remove("show");
@@ -440,5 +440,14 @@
   }
 
   $("adminTabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b) show(b.dataset.tab); };
-  window.openAdmin = () => { $("adminBox").classList.add("show"); $("side").classList.remove("open"); show(tab); };
+  window.openAdmin = (t) => { $("adminBox").classList.add("show"); show(t || tab); };
 })();
+
+// 管理员看别人会话的那一行（左栏里自己的会话行已经是组件了，这个只给聊天记录页用）
+function sessRow(s) {
+  const [label, cls] = sessStatus(s);
+  return `<div class="srow sess" data-id="${s.id}" title="${esc(s.title)}">
+      <span class="tm">${ftime(s.updated)}</span>
+      <span><span class="ti">${esc(s.title)}</span><span class="st ${cls}">${label}</span></span>
+    </div>`;
+}

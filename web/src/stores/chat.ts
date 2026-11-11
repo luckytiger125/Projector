@@ -4,7 +4,7 @@ import { batch, computed, signal } from "@preact/signals";
 import { api, post } from "../lib/api";
 import { requestNotifyPermission } from "../lib/desktop";
 import type {
-  Approval, AskState, Id, LiveData, Message, Question, Session, SessionDetail, Tool,
+  Approval, AskState, Id, LiveData, Message, Question, ServerEvent, Session, SessionDetail, Tool,
 } from "../lib/types";
 import { replace } from "../router";
 import { me } from "./auth";
@@ -94,6 +94,18 @@ export function resetChat(): void {
   seen.clear();
 }
 
+// ---------- 取快照期间的事件缓冲 ----------
+// 老代码的缺陷：取快照期间到达的事件按 snapSeq=0 应用到旧状态，随后被快照整体覆盖，快照之后产生的事件就丢了。
+// 这里：取快照期间，属于这个会话的事件先存起来；快照应用后再逐个重放，seq 不大于 snapSeq 的由去重规则丢掉。
+export const eventBuffer: { sid: Id | null; events: ServerEvent[] } = { sid: null, events: [] };
+let replayHandler: ((ev: ServerEvent) => void) | null = null;
+/** events.ts 注册：缓冲的事件用它重放 */
+export function setReplayHandler(fn: (ev: ServerEvent) => void): void { replayHandler = fn; }
+/** 这个会话的事件现在是不是该缓冲 */
+export function shouldBuffer(sid: string | undefined): boolean {
+  return !!sid && eventBuffer.sid === sid;
+}
+
 // ---------- 打开会话 ----------
 
 /**
@@ -115,8 +127,11 @@ export async function openSession(id: Id | null): Promise<void> {
     }
   });
   seen.clear();
+  eventBuffer.sid = null; eventBuffer.events = [];
   if (!id) return;
   loading.value = true;
+  eventBuffer.sid = id;
+  let replay: ServerEvent[] = [];
   try {
     const data = await api<SessionDetail>("/api/sessions/" + id);
     if (current.value !== id) return;
@@ -133,9 +148,12 @@ export async function openSession(id: Id | null): Promise<void> {
     });
     const ls = await api(`/api/sessions/${id}/links`).catch(() => []);
     if (current.value === id) links.value = ls;   // 老代码这里没检查，切走了也会写进去
+    if (eventBuffer.sid === id) replay = eventBuffer.events;
   } finally {
+    if (eventBuffer.sid === id) { eventBuffer.sid = null; eventBuffer.events = []; }
     if (current.value === id) loading.value = false;
   }
+  for (const ev of replay) replayHandler?.(ev);
 }
 
 /** 重新取当前会话（resync、断线重连后） */
