@@ -34,6 +34,10 @@
 .px .sheet-body > .pane.preview { display: flex; flex-direction: column; padding: 0; }
 .px .empty { color: var(--ink-3); }
 
+/* 内容区里的小节标题（技能、用量……）：宋体加一条细线 */
+.px .sk-h { display: flex; align-items: baseline; gap: var(--s-3); margin: var(--s-6) 0 var(--s-3); padding-bottom: var(--s-2); border-bottom: 1px solid var(--hair-strong); font: 700 var(--t-16) var(--f-serif); letter-spacing: .08em; }
+.px .pane > .sk-h:first-child { margin-top: 0; }
+
 /* 账页式列表（样稿里的 .ledger）：窄屏时一行一条，列不丢 */
 .px .ledger { width: 100%; border-collapse: collapse; font-size: var(--t-13); }
 .px .ledger th { text-align: left; font: 600 11px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); padding: var(--s-2) var(--s-3) var(--s-2) 0; border-bottom: 1.5px solid var(--ink-1); white-space: nowrap; }

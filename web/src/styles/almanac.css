@@ -41,7 +41,6 @@ body { background: var(--paper); overflow: hidden; }
 .sess .x { position: absolute; right: 6px; top: 8px; opacity: 0; }
 .sess:hover .x { opacity: 1; }
 .sub { margin: 10px 0 0; font: 500 14px/1.6 var(--f-serif-cn); color: var(--ink2); }
-.board-empty { font: 500 14px/1.7 var(--f-serif-cn); color: var(--muted); padding: 8px 0; }
 .overlay .dialog { background: var(--paper3); border: 1px solid var(--ink); border-radius: 0; }
 @media (max-width: 720px) {
   .kbsecs { order: 8; flex-basis: 100%; margin-left: 0; }

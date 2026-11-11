@@ -1,11 +1,14 @@
 // 应用外壳：竖栏、值班目录、主区域（值班板 / 对话）、步骤记录页、通用对话框、提示条、命令面板、登录层。
 import { useEffect } from "preact/hooks";
+import { MobileSheet } from "./features/account/Mobile";
+import { UsageSheet } from "./features/account/Usage";
 import { Login } from "./features/auth/Login";
 import { Chat } from "./features/chat/Chat";
 import { StepsPage } from "./features/chat/StepsPage";
 import { FilesHost } from "./features/files/Host";
 import { FilesSheet } from "./features/files/Files";
 import { Board } from "./features/home/Board";
+import { SkillsSheet } from "./features/skills/Skills";
 import { DialogHost, Palette, Toasts } from "./features/shell/Overlays";
 import { MobileTabs, Rail, Sidebar } from "./features/shell/Shell";
 import { closeOverlay, mainRoute, overlayRoute, route } from "./router";
@@ -34,7 +37,7 @@ function useGlobalKeys() {
         return;
       }
       const o = overlayRoute.value?.name;
-      if (o === "steps" || o === "files") closeOverlay();
+      if (o === "steps" || o === "files" || o === "skills" || o === "usage" || o === "mobile") closeOverlay();
     };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
@@ -57,6 +60,9 @@ export function App() {
       </div>
       {u && <StepsPage />}
       {u && <FilesSheet />}
+      {u && <SkillsSheet />}
+      {u && <UsageSheet />}
+      {u && <MobileSheet />}
       <FilesHost />
       <DialogHost />
       <Palette />

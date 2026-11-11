@@ -1,4 +1,5 @@
 // 对话页：头部（标题、元信息、完全放行、步骤记录、命令）、横幅、消息列表、输入区。
+import { pickSessionSection } from "../account/dialogs";
 import { avatarEl } from "../../lib/avatars";
 import { baseName, sessStatus } from "../../lib/format";
 import { Icon } from "../../lib/icons";
@@ -14,8 +15,6 @@ import { confirmBox, paletteOpen, promptBox, toast } from "../../stores/ui";
 import { isMac } from "../../lib/desktop";
 import { Composer } from "./Composer";
 import { MessageList } from "./Messages";
-
-declare const window: Window & { legacy: any };
 
 function ChatHead() {
   const s = currentSess.value;
@@ -55,7 +54,7 @@ function ChatHead() {
             onClick={() => showFiles(s ? (s.work_dir ?? "") : (workDir.value || ""), "workdir")}>
             <Icon name="folder" size={13} />{wd ? baseName(wd) : "默认工作目录"}</button></b></span>
         <span>分区
-          <b><button class="meta-link" type="button" disabled={!s || !mine} onClick={() => window.legacy.pickSessionSection()}>
+          <b><button class="meta-link" type="button" disabled={!s || !mine} onClick={() => pickSessionSection()}>
             {s ? (s.section_name || sessionSectionName(s.section_id)) : "—"}</button></b></span>
         <span>会话状态<b>{stLabel}</b></span>
         <span>消息<b class="mono">{s ? String(s.message_count ?? messages.value.length) : "—"}</b></span>

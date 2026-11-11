@@ -63,13 +63,18 @@ export async function submitLogin(input: LoginInput): Promise<User> {
   return data.user as User;   // me 由 enterApp 在重置各个 store 之后再设置
 }
 
-/** 退出登录（确认框由调用方负责）。出错也照样清掉本地状态 */
-export async function logout(): Promise<void> {
-  try { await post("/api/logout"); } catch { /* 忽略 */ }
+/** 清掉本地登录状态并回到登录页（退出登录、改完密码都用） */
+export async function dropLogin(): Promise<void> {
   token.value = "";
   store.del("token");
   me.value = null;
   await showLogin();
+}
+
+/** 退出登录（确认框由调用方负责）。出错也照样清掉本地状态 */
+export async function logout(): Promise<void> {
+  try { await post("/api/logout"); } catch { /* 忽略 */ }
+  await dropLogin();
 }
 
 /** 启动：有令牌就补种 cookie（升级前登录的人没有）再取 /api/me；没有令牌直接显示登录页。返回当前用户或 null */

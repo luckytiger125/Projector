@@ -1,5 +1,5 @@
 // 知识库：首页、笔记（阅读 / 编辑 / 历史 / 反向链接）、关系图谱；以及和聊天、文件库的衔接（沉淀经验、整理进知识库）。
-// 用到 app.js 里的 api、post、esc、md、dialog、toast、showFiles、openSession 等。
+// 用到 bridge.ts 挂出来的全局：api、post、esc、md、dialog、toast、showFiles、openSession 等（清单在 bridge.ts 顶部），以及 admin.js 顶部的 $。
 "use strict";
 
 const KB = { data: null, view: "home", type: "", tag: "", sel: null, note: null, editing: false, dirty: false,

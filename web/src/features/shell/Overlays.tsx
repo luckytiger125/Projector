@@ -9,13 +9,14 @@ import { current, currentSess, isMine } from "../../stores/chat";
 import { resetComposer, skillPopRequest } from "../../stores/composer";
 import { showFiles } from "../../stores/files";
 import { openLocalDialog } from "../files/local";
+import { changePassword, pickAvatar } from "../account/dialogs";
 import { sessions } from "../../stores/sessions";
 import {
   cycleTheme, dialog, dismissDialog, closeDialog, paletteOpen, theme, toast, toasts, THEMES,
 } from "../../stores/ui";
 import type { DialogButton } from "../../stores/ui";
 
-declare const window: Window & { legacy: any; kbDistill: () => void };
+declare const window: Window & { kbDistill: () => void };
 
 // ---------- 通用对话框 ----------
 function DialogButtonEl({ b, value, busy, setBusy }: { b: DialogButton; value: () => string; busy: boolean; setBusy: (v: boolean) => void }) {
@@ -100,7 +101,6 @@ export function Toasts() {
 interface PalItem { kind: "act" | "sess"; ic: string; label: string; hint: string; run: () => void; dot?: string }
 
 function paletteActions(): Array<[string, string, string, () => void]> {
-  const L = window.legacy;
   const themeIcon = theme.value === "dark" ? "sun" : "moon";
   const acts: Array<[string, string, string, () => void]> = [
     ["plus", "新会话", "", () => { resetComposer(); navigate("/s/new"); }],
@@ -110,11 +110,11 @@ function paletteActions(): Array<[string, string, string, () => void]> {
     ["laptop", "把本机文件交给 Claude", "", () => openLocalDialog()],
     ["puzzle", "选择技能", "", () => { skillPopRequest.value++; }],
     ["upload", "提交新技能", "", () => navigate("/skills")],
-    ["user", "更换头像", "", () => L.pickAvatar()],
+    ["user", "更换头像", "", () => pickAvatar()],
     ["phone", "在手机上打开", "", () => navigate("/mobile")],
     ["trash", "回收站", "", () => navigate("/files/trash")],
     [themeIcon, "切换主题", "", () => { cycleTheme(); }],
-    ["key", "修改密码", "", () => L.changePassword()],
+    ["key", "修改密码", "", () => changePassword()],
   ];
   if (isAdmin.value) acts.push(["shield", "打开管理后台", "", () => navigate("/admin/users")]);
   const id = current.value;

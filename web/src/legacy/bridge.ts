@@ -1,6 +1,6 @@
-// 桥接：让还没迁移的老弹层代码（知识库、技能、用量、管理后台、设置、手机二维码、头像、改密码，
-// 即 legacy/app.js、admin.js、kb.js）继续工作。它们是按“经典脚本”写的，直接读写一批全局变量、调用一批全局函数；
-// 外壳、对话这些已经换成了组件和 store，所以在老代码加载之前，这里先把这些全局接到新的 store 和组件上。
+// 桥接：让还没迁移的老弹层代码（知识库、管理后台，即 legacy/kb.js、admin.js）继续工作。
+// 它们是按“经典脚本”写的，直接读写一批全局变量、调用一批全局函数；
+// 外壳、对话、文件库、技能、用量等已经换成了组件和 store，所以在老代码加载之前，这里先把这些全局接到新的 store 和组件上。
 // 本文件必须在 virtual:legacy 之前 import。迁完一块老弹层，就删掉它依赖的那几行；全部迁完这个文件整个删掉。
 //
 // ===== 老弹层依赖的全局（搜 legacy/*.js 得到的清单） =====
@@ -9,56 +9,53 @@
 //   current       ← stores/chat.current               当前会话 id
 //   currentSess   ← stores/chat.currentSess           当前会话对象
 //   sections      ← stores/sessions.sections          分区列表
-//   mySkills      ← stores/composer.mySkills          我能用的技能
-//   composer      ← stores/composer（refs / skill / workDir 三个属性）
 // 函数：
 //   api post                      ← lib/api              请求
 //   toast                         ← stores/ui            提示条
 //   dialog closeDialog            ← stores/ui + DialogHost   通用对话框：dialog() 同步返回 #dlgBody 元素
 //   openSession(id|null)          ← 路由 navigate         /s/{id}、/s/new
 //   upsertSession                 ← stores/chat
-//   addRef resetComposer loadSkills composerInput        ← stores/composer
-//   sessionSectionName sessStatus ← stores/sessions、lib/format
-//   afterPasswordChange           清令牌、回登录页
+//   addRef composerInput          ← stores/composer
+//   sessStatus                    ← lib/format
 //   isMine()                      ← stores/chat.isMine
 //   md esc                        ← lib/markdown
-//   icon orb avatarEl AVATAR_LIST AVATAR_NAMES           ← lib/icons、lib/avatars
-//   fsize fdate ftime rel baseName fmtTok fmtCost localYmd shortPath      ← lib/format（shortPath 带上 stores/roots）
+//   icon orb avatarEl AVATAR_LIST                       ← lib/icons、lib/avatars
+//   fsize fdate ftime rel baseName shortPath             ← lib/format（shortPath 带上 stores/roots）
 //   countUp IS_MAC                                       小零件
 //   showFiles openTrash linkifyPaths kindOf KIND_COLOR   ← features/files、lib/filekind、lib/linkify   知识库（kb.js）和后台（admin.js）还在调；迁完它们（阶段六、七）就删
+//   fileViewer(标题, 文件, 按钮, 说明html, 改动)           ← features/skills/SkillFiles   后台“审核技能”“技能库”查看文件；阶段七删
+//   openSkillDetail(name)                                 ← 路由 /skills/{name}          后台技能库的“版本记录”；阶段七删
 // 老代码主动挂出来、组件会调用的：
-//   window.legacy.{openMySkills openSkillDetail openUsage showMobile pickAvatar changePassword pickSessionSection}   （app.js 末尾）
 //   window.openKB window.openAdmin window.kbOpenPath window.kbDistill window.kbBeforeClose window.kbInit window.kbLinkify
 //   window.KBDATA window.onKbLoaded window.adminOnSession      （kb.js、admin.js）
 // 老弹层的开关和网址同步见 stores/overlays.ts。
 import { effect } from "@preact/signals";
-import { options } from "preact";
+import { h, options } from "preact";
 import { api, post } from "../lib/api";
-import { AVATAR_LIST, AVATAR_NAMES, avatarEl, orb } from "../lib/avatars";
+import { AVATAR_LIST, avatarEl, orb } from "../lib/avatars";
 import { isMac } from "../lib/desktop";
 import {
-  baseName, fdate, fmtCost, fmtTok, fsize, ftime, localYmd, rel, sessStatus, shortPath,
+  baseName, fdate, fsize, ftime, rel, sessStatus, shortPath,
 } from "../lib/format";
 import { iconSvg } from "../lib/icons";
 import { KIND_COLOR, kindOf } from "../lib/filekind";
 import { linkifyPaths } from "../lib/linkify";
 import { escapeHtml, md, setMarkdownLinkify } from "../lib/markdown";
-import { me, showLogin, store, token } from "../stores/auth";
+import { me } from "../stores/auth";
 import { onEnter } from "../stores/boot";
 import {
   current, currentSess, isMine, onSessionUpdate, upsertSession,
 } from "../stores/chat";
-import {
-  addRef, composerInput, loadSkills, mySkills, refs, resetComposer, skill, workDir,
-} from "../stores/composer";
+import { addRef, composerInput } from "../stores/composer";
 import { onReload } from "../stores/events";
 import { kbCount, kbData } from "../stores/kb";
 import { openTrash, showFiles } from "../stores/files";
 import { loadRoots, roots } from "../stores/roots";
-import { sections, sessionSectionName } from "../stores/sessions";
-import { closeDialog, dialog, openDialog, toast } from "../stores/ui";
+import { sections } from "../stores/sessions";
+import { closeDialog, openDialog, toast } from "../stores/ui";
 import type { DialogButton } from "../stores/ui";
 import { navigate, replace, overlayRoute } from "../router";
+import { openSkillFiles } from "../features/skills/SkillFiles";
 
 const g = window as any;
 
@@ -84,12 +81,6 @@ accessor("me", () => me.value, (v) => { me.value = v; });
 accessor("current", () => current.value, (v) => { current.value = v; });
 accessor("currentSess", () => currentSess.value, (v) => { currentSess.value = v; });
 accessor("sections", () => sections.value, (v) => { sections.value = v; });
-accessor("mySkills", () => mySkills.value, (v) => { mySkills.value = v; });
-g.composer = {
-  get refs() { return refs.value; }, set refs(v) { refs.value = v; },
-  get skill() { return skill.value; }, set skill(v) { skill.value = v; },
-  get workDir() { return workDir.value; }, set workDir(v) { workDir.value = v; },
-};
 
 g.api = api;
 g.post = post;
@@ -100,9 +91,7 @@ g.icon = iconSvg;
 g.orb = orb;
 g.avatarEl = avatarEl;
 g.AVATAR_LIST = AVATAR_LIST;
-g.AVATAR_NAMES = AVATAR_NAMES;
 g.fsize = fsize; g.fdate = fdate; g.ftime = ftime; g.rel = rel; g.baseName = baseName;
-g.fmtTok = fmtTok; g.fmtCost = fmtCost; g.localYmd = localYmd;
 g.shortPath = (p: string) => shortPath(p, roots.value);
 g.showFiles = (path?: string | null): void => showFiles(path ?? null);
 g.openTrash = openTrash;
@@ -110,13 +99,10 @@ g.linkifyPaths = (el: HTMLElement): void => linkifyPaths(el, roots.value);
 g.kindOf = kindOf;
 g.KIND_COLOR = KIND_COLOR;
 g.sessStatus = sessStatus;
-g.sessionSectionName = sessionSectionName;
 g.isMine = () => isMine.value;
 g.IS_MAC = isMac();
 g.upsertSession = upsertSession;
 g.addRef = addRef;
-g.resetComposer = resetComposer;
-g.loadSkills = loadSkills;
 g.composerInput = composerInput;
 
 g.countUp = (el: HTMLElement, to: number, ms = 900): void => {
@@ -143,12 +129,15 @@ g.dialog = (title: string, html: string, buttons: DialogButton[] = [], wide = fa
 };
 g.closeDialog = closeDialog;
 
-g.afterPasswordChange = async (): Promise<void> => {
-  token.value = "";
-  store.del("token");
-  me.value = null;
-  await showLogin();
+// ---------- 技能：后台（admin.js）还在用的两个入口 ----------
+/** 文件查看器：后台“审核技能”“技能库”用。说明（extraHtml）是后台自己拼的、已转义的 HTML；同步渲染，返回内容元素 */
+g.fileViewer = (title: string, files: any[], buttons: DialogButton[] = [], extraHtml = "", changes: any = null): HTMLElement | null => {
+  openSkillFiles(title, files, buttons, extraHtml ? h("div", { dangerouslySetInnerHTML: { __html: extraHtml } }) : undefined, changes);
+  flushRender();
+  return document.getElementById("dlgBody");
 };
+/** 技能详情是组件，网址 /skills/{name}；从后台点进去，后台收起，后退回到后台 */
+g.openSkillDetail = (name: string): void => { navigate("/skills/" + encodeURIComponent(name)); };
 
 // ---------- 知识库露出的两块 ----------
 g.setKbCount = (n: number): void => { kbCount.value = n; };

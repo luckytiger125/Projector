@@ -1,5 +1,6 @@
 // 外壳：竖栏、手机页签、值班目录（新会话、搜索、分区、入口、会话列表、用户卡片和菜单）。
 import { useRef, useState } from "preact/hooks";
+import { changePassword, pickAvatar } from "../account/dialogs";
 import { avatarEl } from "../../lib/avatars";
 import { isMac } from "../../lib/desktop";
 import { hm, pad, sessStatus } from "../../lib/format";
@@ -17,7 +18,7 @@ import {
 import { THEMES, confirmBox, cycleTheme, paletteOpen, theme, toast } from "../../stores/ui";
 import { loc } from "../../router";
 
-declare const window: Window & { legacy: any; openKB: (v?: string) => void };
+declare const window: Window & { openKB: (v?: string) => void };
 
 // ---------- 竖栏（手机上是顶栏） ----------
 export function Rail({ level2 }: { level2: boolean }) {
@@ -104,18 +105,17 @@ function SessRow({ s }: { s: Session }) {
 function UserMenu({ close }: { close: () => void }) {
   const u = me.value!;
   const th = THEMES[theme.value];
-  const L = window.legacy;
   const go = (fn: () => void) => () => { close(); fn(); };
   return (
     <div class="user-menu" onClick={(e) => e.stopPropagation()}>
-      <button onClick={go(() => L.pickAvatar())}><Icon name="user" size={16} />更换头像</button>
+      <button onClick={go(() => pickAvatar())}><Icon name="user" size={16} />更换头像</button>
       <button onClick={go(() => navigate("/skills"))}><Icon name="puzzle" size={16} />我的技能</button>
       <button onClick={go(() => navigate("/usage"))}><Icon name="steps" size={16} />我的用量</button>
       <button onClick={go(() => navigate("/mobile"))}><Icon name="phone" size={16} />在手机上打开</button>
       {u.role === "admin" && <button onClick={go(() => navigate("/admin/users"))}><Icon name="shield" size={16} />管理后台</button>}
       <hr />
       <button onClick={go(() => { cycleTheme(); })}><Icon name={th[1]} size={16} />主题：{th[0]}</button>
-      <button onClick={go(() => L.changePassword())}><Icon name="key" size={16} />修改密码</button>
+      <button onClick={go(() => changePassword())}><Icon name="key" size={16} />修改密码</button>
       <button onClick={go(async () => { if (await confirmBox({ title: "退出登录", message: "退出登录？", ok: "退出登录" })) await logout(); })}><Icon name="logout" size={16} />退出登录</button>
     </div>
   );

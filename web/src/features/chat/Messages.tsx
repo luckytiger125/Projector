@@ -15,7 +15,7 @@ import { showFiles } from "../../stores/files";
 import { roots } from "../../stores/roots";
 import { toast } from "../../stores/ui";
 
-declare const window: Window & { legacy: any; kbDistill: () => void };
+declare const window: Window & { kbDistill: () => void };
 
 // ---------- 滚动：贴底跟随、加载更早时保持位置 ----------
 let box: HTMLElement | null = null;

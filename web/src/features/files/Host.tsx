@@ -109,9 +109,9 @@ export function FilesHost() {
   return (
     <>
       <input type="file" multiple hidden ref={(el) => { pickers.file = el; }} onChange={pickChat(false)} />
-      <input type="file" hidden {...{ webkitdirectory: "" }} ref={(el) => { pickers.dir = el; }} onChange={pickChat(true)} />
+      <input type="file" hidden {...{ webkitdirectory: true }} ref={(el) => { pickers.dir = el; }} onChange={pickChat(true)} />
       <input type="file" multiple hidden ref={(el) => { pickers.libFile = el; }} onChange={pickLib(false)} />
-      <input type="file" hidden {...{ webkitdirectory: "" }} ref={(el) => { pickers.libDir = el; }} onChange={pickLib(true)} />
+      <input type="file" hidden {...{ webkitdirectory: true }} ref={(el) => { pickers.libDir = el; }} onChange={pickLib(true)} />
       {z && (
         <div class="dropzone show" aria-hidden="true">
           <div class="dz">

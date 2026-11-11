@@ -2,16 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loc, replace, startRouter, stopRouter, navigate } from "../router";
 import { me } from "./auth";
 import { startOverlaySync } from "./overlays";
-import { closeDialog, dialog, openDialog } from "./ui";
+import { closeDialog } from "./ui";
 
-// 假的老弹层：三个盒子和老代码挂在 window 上的入口
+// 假的老弹层：两个盒子和老代码挂在 window 上的入口
 function setup() {
   document.body.innerHTML = '<div id="kbBox" class="overlay"></div><div id="adminBox" class="overlay"></div>';
   const w = window as any;
-  w.legacy = {
-    openMySkills: vi.fn(() => openDialog("技能", "x")),
-    openSkillDetail: vi.fn(), openUsage: vi.fn(() => openDialog("我的用量", "x")), showMobile: vi.fn(),
-  };
   w.openKB = vi.fn(async () => { document.getElementById("kbBox")!.classList.add("show"); });
   w.openAdmin = vi.fn(() => document.getElementById("adminBox")!.classList.add("show"));
   w.kbBeforeClose = vi.fn(() => { document.getElementById("kbBox")!.classList.remove("show"); return true; });
@@ -60,15 +56,27 @@ describe("路由 ↔ 老弹层", () => {
     expect(w.openAdmin).not.toHaveBeenCalled();
   });
 
-  it("对话框形式的弹层：/usage 打开，对话框被关掉后网址退回背景", async () => {
+  it("技能、用量、手机二维码是组件，不归老弹层同步管：/skills /usage /mobile 不会去开老弹层", async () => {
     const w = setup(); stop = startOverlaySync();
-    navigate("/usage");
+    for (const p of ["/skills", "/skills/x", "/usage", "/mobile"]) {
+      navigate(p);
+      await wait();
+      expect(location.pathname + "").toBe(p);
+    }
+    expect(w.openKB).not.toHaveBeenCalled();
+    expect(w.openAdmin).not.toHaveBeenCalled();
+  });
+
+  it("从老弹层里打开技能详情（管理后台技能库的“版本记录”）：后台收起，后退回到后台", async () => {
+    setup(); stop = startOverlaySync();
+    navigate("/admin/library");
     await wait();
-    expect(w.legacy.openUsage).toHaveBeenCalledTimes(1);
-    expect(dialog.value?.title).toBe("我的用量");
-    closeDialog();
-    await wait(60);
-    expect(location.pathname).toBe("/s/abc");
+    expect(document.getElementById("adminBox")!.classList.contains("show")).toBe(true);
+    navigate("/skills/x");
+    await wait();
+    expect(document.getElementById("adminBox")!.classList.contains("show")).toBe(false);
+    expect(location.pathname).toBe("/skills/x");
+    expect(loc.value.state.bg).toBe("/s/abc");
   });
 
   it("后退键关掉弹层：老弹层跟着关", async () => {
