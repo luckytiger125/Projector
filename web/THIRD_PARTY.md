@@ -10,4 +10,9 @@ docx-preview、jszip、xlsx、qrcode-generator 只在预览文件或手机扫码
 - `docx-preview` 0.3.5 — docx 预览，MIT License，来源：https://github.com/VolodymyrBaydalka/docxjs
 - `xlsx` 0.18.5 — Excel 读取，Apache-2.0 License，来源：https://github.com/SheetJS/sheetjs
 
+## 仅开发和测试用（不进构建产物）
+
+- `vitest` ^4.1.12 — 单元测试运行器，MIT License，来源：https://github.com/vitest-dev/vitest。理由：seq 去重、路由、格式化、Markdown 净化这些纯逻辑要有回归测试，且和 Vite 共用配置。
+- `jsdom` ^29.1.1 — 测试里的 DOM 环境（DOMPurify 和 History API 需要），MIT License，来源：https://github.com/jsdom/jsdom。
+
 升级时请同时更新 `package.json` 和本文件的版本说明，并保留上游许可证。

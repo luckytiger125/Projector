@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit && vitest run",
+    "test": "vitest run"
   },
   "dependencies": {
     "@preact/signals": "^2.11.4",
@@ -20,7 +21,9 @@
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.6.6",
+    "jsdom": "^29.1.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.7"
+    "vite": "^8.3.7",
+    "vitest": "^4.1.12"
   }
 }
