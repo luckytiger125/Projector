@@ -15,7 +15,7 @@
   --f-body: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
   --f-mono: Consolas, "Courier New", monospace;
   --ease: cubic-bezier(.2, .8, .2, 1); --spring: cubic-bezier(.34, 1.56, .64, 1);
-  --r: 14px; --side-w: 280px;
+  --r: 14px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
