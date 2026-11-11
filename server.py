@@ -108,9 +108,21 @@ def manifest():
     }, media_type="application/manifest+json")
 
 
-@app.get("/")
+def _index_page():
+    return FileResponse(BASE / "static" / "app" / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(BASE / "static" / "index.html", headers={"Cache-Control": "no-cache"})
+    return _index_page()
+
+
+# 前端路由回退：这些前缀下的网址都交给前端处理。用明确清单，不做“其余全部”的兜底，
+# 这样 /api/ 下打错的路径仍然是 404。
+SPA_PREFIXES = ("s", "board", "files", "kb", "skills", "usage", "mobile", "admin")
+for _p in SPA_PREFIXES:
+    app.add_api_route(f"/{_p}", _index_page, methods=["GET"], include_in_schema=False)
+    app.add_api_route(f"/{_p}/{{rest:path}}", _index_page, methods=["GET"], include_in_schema=False)
 
 
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")

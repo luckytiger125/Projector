@@ -95,6 +95,7 @@ function kbLinkify(text, links) {
   })).join("");
 }
 window.kbLinkify = kbLinkify;
+window.kbRelOf = kbRelOf;  // 经典脚本里顶层函数会自动挂 window，模块里不会；app.js 用 window.kbRelOf 判断
 
 // ---------- 打开和关闭 ----------
 

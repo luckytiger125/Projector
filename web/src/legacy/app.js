@@ -1406,15 +1406,6 @@ function fileBadge(e) {
 }
 const fileUrl = (p, extra = "") => `/api/files/${extra || "raw"}?path=${encodeURIComponent(p)}`;
 
-const libs = {};
-function loadScript(src) {
-  return libs[src] || (libs[src] = new Promise((ok, fail) => {
-    const s = document.createElement("script"); s.src = src; s.onload = ok;
-    s.onerror = () => { delete libs[src]; fail(new Error("预览组件加载失败，检查这台电脑能不能上网")); };
-    document.head.appendChild(s);
-  }));
-}
-
 function renderCrumbs(crumbs) {
   $("crumbs").innerHTML = crumbs.map(c => `<a data-go="${esc(c.path)}">${esc(c.label)}</a>`).join(" / ") + (F.searching ? " / 搜索结果" : "");
   const ws = F.path.startsWith("ws:");
@@ -1502,15 +1493,14 @@ async function preview(e) {
       box.innerHTML = note + (kind === "md" ? `<div class="mdv md">${md(d.text)}</div>` : `<pre>${esc(d.text)}</pre>`);
     } else if (kind === "docx") {
       if (e.size > 50 * 1048576) return cannot("文件太大，不适合在这里预览。");
-      await loadScript("/static/vendor/jszip.min.js");
-      await loadScript("/static/vendor/docx-preview.min.js");
+      const docx = await loadDocx();
       const blob = await fetch(url).then(r => r.ok ? r.blob() : Promise.reject(new Error("读取失败")));
       if (F.sel !== e.path) return;
       box.innerHTML = "";
       await docx.renderAsync(blob, box, null, { inWrapper: true, ignoreLastRenderedPageBreak: true });
     } else if (kind === "sheet") {
       if (e.size > 30 * 1048576) return cannot("表格太大，不适合在这里预览。");
-      await loadScript("/static/vendor/xlsx.full.min.js");
+      const XLSX = await loadXlsx();
       const buf = await fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error("读取失败")));
       if (F.sel !== e.path) return;
       const wb = XLSX.read(buf, { type: "array", codepage: 936 });
@@ -1924,7 +1914,8 @@ async function showMobile() {
   let lan;
   try { lan = await api("/api/lan"); } catch (e) { return toast(e.message, "err"); }
   const urls = lan.urls.length ? lan.urls : [location.origin];
-  try { await loadScript("/static/vendor/qrcode.min.js"); }
+  let qrcode;
+  try { qrcode = await loadQrcode(); }
   catch (e) { return toast(e.message, "err"); }
   const qrSvg = url => {
     const qr = qrcode(0, "H"); qr.addData(url); qr.make();
