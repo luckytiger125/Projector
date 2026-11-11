@@ -13,52 +13,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Projector">
-  <script type="module" crossorigin src="/static/app/assets/index-BfF6tmKp.js"></script>
-  <link rel="stylesheet" crossorigin href="/static/app/assets/index-BV__ExOJ.css">
+  <script type="module" crossorigin src="/static/app/assets/index-DMRsoUU9.js"></script>
+  <link rel="stylesheet" crossorigin href="/static/app/assets/index-DcEApJJK.css">
 </head>
 <body>
 <div id="app"></div>
-
-<div class="dropzone" id="dropzone"><div class="dz"><span id="dzOrb"></span><div>松手，交给 Claude</div><p class="muted" style="margin:6px 0 0">文件会上传到你自己的工作区</p></div></div>
-
-<div class="overlay" id="filesBox"><div class="dialog">
-  <header class="fhead">
-    <span class="seg" id="areas"><button data-area="ws:">我的文件<small>只有自己能看</small></button><button data-area="">公共文件库<small>所有人可见</small></button></span>
-    <span class="crumbs" id="crumbs"></span>
-    <span class="tag" id="fScope"></span>
-    <input id="fq" placeholder="搜索文件名…">
-    <button class="btn small" id="frefDir" title="把当前文件夹引用到对话里"></button>
-    <button class="iconbtn closebtn" data-close></button>
-  </header>
-  <div class="pickbar" id="pickbar" hidden><span id="pickText"></span><button class="btn small primary" id="pickOk">选这个文件夹</button></div>
-  <div class="ftools" id="ftools">
-    <button class="btn small" id="fUpFile"></button>
-    <button class="btn small" id="fUpDir"></button>
-    <button class="btn small" id="fMkdir"></button>
-    <button class="btn small" id="fKbDir" hidden title="让 Claude 读这个文件夹，为重要文件写文件卡片存进知识库"></button>
-    <span class="sp"></span>
-    <span class="muted" id="fRO" hidden style="font-size:12.5px"></span>
-    <button class="btn small ghost" id="fTrash"></button>
-    <input type="file" id="fUpIn" multiple hidden><input type="file" id="fUpDirIn" webkitdirectory hidden>
-  </div>
-  <div class="fprog" id="fprog" hidden><i id="fprogBar"></i><span id="fprogText"></span></div>
-  <div class="fbody" id="fbody">
-    <div id="flist"></div>
-    <div id="fview">
-      <div class="fvhead">
-        <button class="iconbtn" id="fback"></button>
-        <span class="n" id="fname"></span>
-        <button class="btn small" id="fref" hidden></button>
-        <button class="btn small" id="fkb" hidden title="让 Claude 读这份文件，写一张文件卡片存进知识库"></button>
-        <button class="iconbtn" id="fren" hidden data-tip="重命名"></button>
-        <button class="iconbtn" id="fdel" hidden data-tip="删除"></button>
-        <button class="btn small" id="flocal" hidden></button>
-        <a class="btn small" id="fdown" hidden></a>
-      </div>
-      <div id="fcontent"></div>
-    </div>
-  </div>
-</div></div>
 
 <div class="overlay" id="adminBox"><div class="dialog">
   <header><strong>管理后台</strong>
@@ -93,10 +52,6 @@
     </section>
   </div>
 </div></div>
-
-<!-- 把本机文件交给 Claude：老代码的上传流程用到的两个文件选择框 -->
-<input type="file" id="uploadInput" multiple hidden>
-<input type="file" id="uploadDirInput" webkitdirectory hidden>
 
 </body>
 </html>

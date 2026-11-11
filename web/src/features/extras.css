@@ -147,8 +147,6 @@
 .px .older:disabled { opacity: .6; }
 
 /* ── 步骤记录页 ── */
-.px .sheet-head .note { font-size: var(--t-12); color: var(--ink-3); }
-.px .sheet-head .m-back { display: none; }
 .px .steps-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s-4) var(--s-6) var(--s-6); display: flex; flex-direction: column; gap: var(--s-2); }
 .px .step { border-left: 2px solid var(--hair-strong); padding: var(--s-1) 0 var(--s-1) var(--s-3); animation: rise var(--d-slow) var(--ease) both; }
 .px .step .k { font: 600 11px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); }
@@ -159,7 +157,6 @@
 .px .step.tool_result pre { color: var(--ink-2); }
 .px .step.err { border-left-color: var(--vermilion); }
 .px .step.err pre { color: var(--vermilion); }
-.px .sheet-bar { margin-bottom: 0; height: 0; }
 
 /* ── 手机补充 ── */
 @media (max-width: 720px) {

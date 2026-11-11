@@ -10,7 +10,7 @@ const RESOLVED = "\0" + ID;
 
 export default function legacy(): Plugin {
   const dir = resolve(import.meta.dirname, "../src/legacy");
-  const vendor = resolve(dir, "vendor.ts").replaceAll("\\", "/");
+  const vendor = resolve(dir, "../lib/vendor.ts").replaceAll("\\", "/");
   return {
     name: "projector-legacy",
     resolveId(id) {
@@ -19,7 +19,7 @@ export default function legacy(): Plugin {
     load(id) {
       if (id !== RESOLVED) return null;
       const prelude = [
-        `import { loadDocx, loadXlsx, loadQrcode } from ${JSON.stringify(vendor)};`,
+        `import { loadQrcode } from ${JSON.stringify(vendor)};`,
         "",
       ].join("\n");
       const parts = ORDER.map((f) => {

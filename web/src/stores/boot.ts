@@ -5,6 +5,7 @@ import type { User } from "../lib/types";
 import { resetChat } from "./chat";
 import { loadSkills, resetComposer } from "./composer";
 import { connect } from "./events";
+import { resetFiles } from "./files";
 import { loadSections, resetSessions } from "./sessions";
 
 const enterHooks = new Set<(u: User) => void>();
@@ -20,6 +21,7 @@ export function enterApp(user: User): void {
   resetSessions();
   resetChat();
   resetComposer();
+  resetFiles();
   me.value = user;
   void loadSections();
   for (const fn of enterHooks) fn(user);

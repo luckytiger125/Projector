@@ -3,15 +3,15 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { orb } from "../../lib/avatars";
 import { Icon } from "../../lib/icons";
 import { useOutsideClick } from "../../lib/hooks";
-import { navigate } from "../../router";
+import { navigate, overlayRoute } from "../../router";
 import {
   askOf, askPick, askSetNote, askSetOther, askSetStep, askSubmit, currentSess, isAnswered, isMine, questions,
   sendMessage, sending, stopSession,
 } from "../../stores/chat";
 import { mySkills, refs, registerInput, removeRef, skill, skillPopRequest } from "../../stores/composer";
+import { showFiles } from "../../stores/files";
 import { dialog, confirmBox, paletteOpen } from "../../stores/ui";
-
-declare const window: Window & { legacy: any };
+import { openLocalDialog } from "../files/local";
 
 // ---------- 提问面板 ----------
 const REC = /（推荐）$|\(推荐\)$/;
@@ -23,7 +23,7 @@ function AskPanel() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!questions.value.length) return;
-      if (document.querySelector(".overlay.show") || dialog.value || paletteOpen.value) return;
+      if (document.querySelector(".overlay.show") || overlayRoute.value || dialog.value || paletteOpen.value) return;
       const t = e.target as Element | null;
       const typing = t && t.closest && t.closest("input, textarea");
       if (!typing && /^[1-9]$/.test(e.key)) { e.preventDefault(); askPick(+e.key - 1); return; }
@@ -138,7 +138,7 @@ export function Composer() {
     if ((e as InputEvent).data === "@") {   // 打 @ 打开文件选择
       const t = ta.current!;
       t.value = t.value.slice(0, t.selectionStart - 1) + t.value.slice(t.selectionStart);
-      window.legacy.showFiles();
+      showFiles();
     }
   };
 
@@ -156,7 +156,7 @@ export function Composer() {
                     <button title="不用这个技能" aria-label="不用这个技能" onClick={() => { skill.value = ""; }}><Icon name="x" size={12} /></button></span>
                 )}
                 {refs.value.map((r, i) => (
-                  <span key={r.abs} class="chip ref" title={r.abs} onClick={() => window.legacy.showFiles(r.path)}>
+                  <span key={r.abs} class="chip ref" title={r.abs} onClick={() => showFiles(r.path)}>
                     <Icon name={r.dir ? "folder" : "clip"} size={12} /><span>{r.name}</span>
                     <button title="移除" aria-label="移除" onClick={(e) => { e.stopPropagation(); removeRef(i); }}><Icon name="x" size={12} /></button>
                   </span>
@@ -166,8 +166,8 @@ export function Composer() {
             <textarea id="input" ref={ta} rows={1} placeholder="写下要交给 Claude 的事" onInput={onInput}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); void send(); } }} />
             <div class="cbar">
-              <button class="tbtn" title="从文件库选文件或文件夹（也可以打 @）" onClick={() => window.legacy.showFiles()}><Icon name="clip" size={16} /><span>引用文件</span></button>
-              <button class="tbtn" title="把这台电脑上的文件交给 Claude" onClick={() => window.legacy.openLocalDialog()}><Icon name="laptop" size={16} /><span>本机文件</span></button>
+              <button class="tbtn" title="从文件库选文件或文件夹（也可以打 @）" onClick={() => showFiles()}><Icon name="clip" size={16} /><span>引用文件</span></button>
+              <button class="tbtn" title="把这台电脑上的文件交给 Claude" onClick={() => openLocalDialog()}><Icon name="laptop" size={16} /><span>本机文件</span></button>
               <span class="anchor" ref={anchor}>
                 <button class={"tbtn" + (skill.value ? " on" : "")} onClick={(e) => { e.stopPropagation(); setPop(!pop); }}><Icon name="puzzle" size={16} /><span>技能</span></button>
                 {pop && <SkillPop close={() => setPop(false)} />}

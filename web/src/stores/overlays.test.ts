@@ -6,11 +6,9 @@ import { closeDialog, dialog, openDialog } from "./ui";
 
 // 假的老弹层：三个盒子和老代码挂在 window 上的入口
 function setup() {
-  document.body.innerHTML = '<div id="filesBox" class="overlay"></div><div id="kbBox" class="overlay"></div><div id="adminBox" class="overlay"></div>';
+  document.body.innerHTML = '<div id="kbBox" class="overlay"></div><div id="adminBox" class="overlay"></div>';
   const w = window as any;
   w.legacy = {
-    showFiles: vi.fn(() => document.getElementById("filesBox")!.classList.add("show")),
-    openTrash: vi.fn(() => openDialog("回收站", "x")),
     openMySkills: vi.fn(() => openDialog("技能", "x")),
     openSkillDetail: vi.fn(), openUsage: vi.fn(() => openDialog("我的用量", "x")), showMobile: vi.fn(),
   };
@@ -31,14 +29,14 @@ beforeEach(() => {
 afterEach(() => { stop?.(); stopRouter(); });
 
 describe("路由 ↔ 老弹层", () => {
-  it("网址变成 /files：打开文件库；关掉文件库：网址退回背景", async () => {
+  it("网址变成 /kb：打开知识库；关掉知识库：网址退回背景", async () => {
     const w = setup(); stop = startOverlaySync();
-    navigate("/files");
+    navigate("/kb");
     await wait();
-    expect(w.legacy.showFiles).toHaveBeenCalledTimes(1);
-    expect(document.getElementById("filesBox")!.classList.contains("show")).toBe(true);
+    expect(w.openKB).toHaveBeenCalledTimes(1);
+    expect(document.getElementById("kbBox")!.classList.contains("show")).toBe(true);
     // 老代码自己关掉（Esc、关闭按钮）
-    document.getElementById("filesBox")!.classList.remove("show");
+    document.getElementById("kbBox")!.classList.remove("show");
     await wait();
     await wait(50);
     expect(location.pathname).toBe("/s/abc");
@@ -46,11 +44,20 @@ describe("路由 ↔ 老弹层", () => {
 
   it("老代码自己打开的弹层，网址跟上而且只打开一次", async () => {
     const w = setup(); stop = startOverlaySync();
-    w.legacy.showFiles();   // 比如点了回复里的文件小标签
+    document.getElementById("adminBox")!.classList.add("show");   // 比如后台自己打开
+    await wait();
+    expect(location.pathname).toBe("/admin/users");
+    expect(w.openAdmin).not.toHaveBeenCalled();
+    expect(loc.value.state.bg).toBe("/s/abc");
+  });
+
+  it("文件库是组件，不归老弹层同步管：/files 不会去开老弹层", async () => {
+    const w = setup(); stop = startOverlaySync();
+    navigate("/files");
     await wait();
     expect(location.pathname).toBe("/files");
-    expect(w.legacy.showFiles).toHaveBeenCalledTimes(1);
-    expect(loc.value.state.bg).toBe("/s/abc");
+    expect(w.openKB).not.toHaveBeenCalled();
+    expect(w.openAdmin).not.toHaveBeenCalled();
   });
 
   it("对话框形式的弹层：/usage 打开，对话框被关掉后网址退回背景", async () => {

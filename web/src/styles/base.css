@@ -182,11 +182,6 @@ a.fpath { color: var(--accent); cursor: pointer; text-decoration: underline dott
 @keyframes rot { to { --ang: 360deg; } }
 textarea#input { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; padding: 14px 18px 6px; min-height: 54px; max-height: 260px; line-height: 1.6; }
 textarea#input::placeholder { color: var(--faint); }
-/* 拖文件 */
-.dropzone { position: fixed; inset: 0; z-index: 60; display: none; place-items: center; background: color-mix(in srgb, var(--bg) 60%, transparent); backdrop-filter: blur(6px); pointer-events: none; }
-.dropzone.show { display: grid; animation: fade .2s; }
-.dropzone .dz { border: 2.5px dashed var(--accent); border-radius: 28px; padding: 48px 64px; text-align: center; background: var(--surface); box-shadow: var(--shadow-lg); animation: pop .35s var(--spring); }
-.dropzone .dz div { font: 400 30px var(--f-display); margin-top: 14px; }
 /* ============ 弹层 ============ */
 .overlay { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(20, 12, 4, .32); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
 .overlay.show { display: flex; animation: fade .2s; }
@@ -206,67 +201,11 @@ textarea#input::placeholder { color: var(--faint); }
 .ava-opt.on { border-color: var(--accent); background: var(--accent-soft); }
 /* ============ 登录 ============ */
 .auth { display: grid; grid-template-columns: 1.1fr 1fr; width: 100%; height: 100%; }
-/* ============ 文件 ============ */
-#filesBox .dialog { max-width: 1320px; height: 88vh; }
-.fhead { flex-wrap: wrap; }
+/* ============ 文件（文件库已经是组件，样式在 features/files；这里只剩老弹层还在用的 .seg、.fk） ============ */
 .seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--code); }
 .seg button { padding: 3px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); transition: background .2s, color .2s; }
-#areas button { line-height: 1.25; text-align: left; }
-#areas small { display: block; font-size: 10.5px; opacity: .7; }
 .seg button.on { background: var(--raised); color: var(--ink); box-shadow: var(--shadow); }
-.crumbs { flex: 1; min-width: 160px; font-size: 13.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); }
-.crumbs a { color: var(--ink2); text-decoration: none; cursor: pointer; padding: 2px 4px; border-radius: 5px; }
-.crumbs a:hover { background: var(--code); color: var(--accent); }
-.crumbs a:last-child { color: var(--ink); font-weight: 600; }
-#fq { width: 220px; padding: 6px 12px; border-radius: 10px; border: 1px solid var(--line2); background: var(--solid); font-size: 13.5px; outline: none; }
-#fq:focus { border-color: var(--accent); }
-.ftools { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.ftools .sp { flex: 1; }
-.fprog { position: relative; height: 26px; background: var(--code); border-bottom: 1px solid var(--line); overflow: hidden; }
-.fprog i { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--accent-soft), color-mix(in srgb, var(--accent) 30%, transparent)); transition: width .3s var(--ease); }
-.fprog span { position: relative; font-size: 12.5px; line-height: 26px; padding: 0 16px; color: var(--ink2); }
-.fi .acts { display: none; gap: 2px; }
-.fi:hover .acts { display: inline-flex; }
-.fi:hover .s { display: none; }
-.fi .acts .iconbtn { width: 26px; height: 26px; border-radius: 7px; }
-.fi .acts .iconbtn:hover { background: var(--raised); }
-.fi .acts .del:hover { color: var(--rose); }
-#flist.dragover { background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -6px; }
-.trash-row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); animation: rise .35s var(--ease) both; }
-.trash-row .tn { flex: 1; min-width: 0; }
-.trash-row .tn b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.trash-row .tn small { color: var(--muted); font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pickbar { display: flex; align-items: center; gap: 10px; padding: 9px 20px; font-size: 13px; background: var(--info-soft); color: var(--info); }
-.pickbar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fbody { flex: 1; display: flex; min-height: 0; }
-#flist { width: 350px; flex-shrink: 0; overflow-y: auto; border-right: 1px solid var(--line); padding: 8px; }
-.fi { display: flex; gap: 10px; align-items: center; padding: 7px 9px; border-radius: 9px; cursor: pointer; font-size: 13.5px; transition: background .15s; animation: slidein .3s var(--ease) both; }
-.fi:hover { background: var(--code); }
-.fi.sel { background: var(--accent-soft); }
 .fk { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 700 9px var(--f-mono); letter-spacing: .03em; flex-shrink: 0; color: #fff; }
-.fi .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fi .s { font-size: 11.5px; color: var(--faint); white-space: nowrap; }
-.fi .sub { display: block; font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; }
-#fview { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.fvhead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-.fvhead .n { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 100px; }
-#fcontent { flex: 1; overflow: auto; position: relative; background: var(--code); }
-#fcontent .center { color: var(--muted); text-align: center; margin-top: 16%; padding: 0 20px; animation: fade .3s; }
-#fcontent .center .btn { margin: 16px 4px 0; }
-#fcontent .center .big { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; margin: 0 auto 14px; background: var(--raised); box-shadow: var(--shadow); color: var(--faint); }
-#fcontent img { max-width: calc(100% - 32px); display: block; margin: 16px auto; border-radius: 8px; box-shadow: var(--shadow); animation: fade .4s; }
-#fcontent iframe { border: 0; width: 100%; height: 100%; display: block; background: #fff; }
-#fcontent video, #fcontent audio { display: block; max-width: calc(100% - 32px); margin: 24px auto; border-radius: 10px; }
-#fcontent pre { margin: 0; padding: 14px 18px; font: 12.5px/1.6 var(--f-mono); white-space: pre-wrap; word-break: break-all; }
-#fcontent .mdv { padding: 22px 30px; max-width: 860px; background: var(--raised); min-height: 100%; }
-#fcontent .sheet { background: var(--raised); min-height: 100%; }
-#fcontent .sheet table { border-collapse: collapse; font-size: 13px; margin: 10px; }
-#fcontent .sheet td, #fcontent .sheet th { border: 1px solid var(--line2); padding: 3px 8px; white-space: nowrap; }
-.tabs { display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; position: sticky; top: 0; background: var(--raised); z-index: 1; }
-.tabs button { border-radius: 8px; padding: 2px 12px; font-size: 13px; color: var(--muted); }
-.tabs button.on { background: var(--accent-soft); color: var(--accent2); font-weight: 600; }
-#fcontent .docx-wrapper { background: transparent; padding: 18px; }
-#fback { display: none; }
 /* ============ 管理 ============ */
 #adminBox .dialog { max-width: 1140px; height: 88vh; }
 #adminBox .content { flex: 1; }
@@ -360,7 +299,6 @@ details.grp .list { padding: 0 8px 8px; animation: down .3s var(--ease); }
 .tagbox input { border: 0; outline: none; background: none; min-width: 140px; flex: 1; font: 13px var(--f-mono); }
 /* ============ 知识库 ============ */
 #kbBox { z-index: 31; }
-#filesBox { z-index: 32; }
 :root { --k-exp: var(--accent); --k-card: var(--info); --k-topic: var(--sage); --k-other: var(--muted); }
 .k-exp { --kc: var(--k-exp); }
 .k-card { --kc: var(--k-card); }
@@ -509,9 +447,6 @@ a.wl.ghost::before { background: none; border: 1px dashed var(--faint); width: 4
 .gt.on i { opacity: 1; }
 .gt i.k-ghost { background: none; border: 1px dashed var(--faint); }
 .glegend { position: absolute; right: 16px; bottom: 12px; font-size: 12px; color: var(--faint); pointer-events: none; }
-/* 文件预览里的卡片提示 */
-.kb-fbanner { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; font-size: 13px; color: var(--sage); background: color-mix(in srgb, var(--sage) 10%, var(--raised)); border-bottom: 1px solid color-mix(in srgb, var(--sage) 25%, transparent); animation: down .35s var(--ease); }
-.kb-fbanner span { flex: 1; color: var(--ink2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .kb-org { display: flex; gap: 16px; align-items: flex-start; }
 /* iPhone 刘海和底部横条 */
 /* ============ 窄屏 ============ */
@@ -521,12 +456,6 @@ a.wl.ghost::before { background: none; border: 1px dashed var(--faint); width: 4
 }
 @media (max-width: 720px) {
   .tbtn span, #bypassWrap > span:last-child { display: none; }
-  #flist { width: 100%; border-right: 0; }
-  #fview { display: none; }
-  .fbody.viewing #flist { display: none; }
-  .fbody.viewing #fview { display: flex; }
-  #fback { display: inline-grid; }
-  #fq { width: 100%; order: 9; }
   .filev { flex-direction: column; }
   .filev .list { width: 100%; }
   .ava-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }

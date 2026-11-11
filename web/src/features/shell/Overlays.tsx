@@ -7,6 +7,8 @@ import { navigate } from "../../router";
 import { isAdmin } from "../../stores/auth";
 import { current, currentSess, isMine } from "../../stores/chat";
 import { resetComposer, skillPopRequest } from "../../stores/composer";
+import { showFiles } from "../../stores/files";
+import { openLocalDialog } from "../files/local";
 import { sessions } from "../../stores/sessions";
 import {
   cycleTheme, dialog, dismissDialog, closeDialog, paletteOpen, theme, toast, toasts, THEMES,
@@ -104,8 +106,8 @@ function paletteActions(): Array<[string, string, string, () => void]> {
     ["plus", "新会话", "", () => { resetComposer(); navigate("/s/new"); }],
     ["folder", "打开文件库", "", () => navigate("/files")],
     ["book", "打开知识库", "", () => navigate("/kb")],
-    ["clip", "引用文件到对话", "@", () => L.showFiles()],
-    ["laptop", "把本机文件交给 Claude", "", () => L.openLocalDialog()],
+    ["clip", "引用文件到对话", "@", () => showFiles()],
+    ["laptop", "把本机文件交给 Claude", "", () => openLocalDialog()],
     ["puzzle", "选择技能", "", () => { skillPopRequest.value++; }],
     ["upload", "提交新技能", "", () => navigate("/skills")],
     ["user", "更换头像", "", () => L.pickAvatar()],

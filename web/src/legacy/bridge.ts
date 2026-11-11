@@ -1,4 +1,4 @@
-// 桥接：让还没迁移的老弹层代码（文件库、知识库、技能、用量、管理后台、设置、手机二维码、头像、改密码，
+// 桥接：让还没迁移的老弹层代码（知识库、技能、用量、管理后台、设置、手机二维码、头像、改密码，
 // 即 legacy/app.js、admin.js、kb.js）继续工作。它们是按“经典脚本”写的，直接读写一批全局变量、调用一批全局函数；
 // 外壳、对话这些已经换成了组件和 store，所以在老代码加载之前，这里先把这些全局接到新的 store 和组件上。
 // 本文件必须在 virtual:legacy 之前 import。迁完一块老弹层，就删掉它依赖的那几行；全部迁完这个文件整个删掉。
@@ -6,31 +6,28 @@
 // ===== 老弹层依赖的全局（搜 legacy/*.js 得到的清单） =====
 // 变量（读写都接到 store 上，老代码里 `me = {...}` 这样的赋值会写进 signal）：
 //   me            ← stores/auth.me                    当前用户
-//   token         ← stores/auth.token                 登录令牌（invoke 桌面壳命令时要带）
 //   current       ← stores/chat.current               当前会话 id
 //   currentSess   ← stores/chat.currentSess           当前会话对象
-//   links         ← stores/chat.links                 当前会话的本机文件夹
 //   sections      ← stores/sessions.sections          分区列表
 //   mySkills      ← stores/composer.mySkills          我能用的技能
 //   composer      ← stores/composer（refs / skill / workDir 三个属性）
-//   fileRoots     ← stores/roots                      文件库、工作区根目录和 Office 预览能力（legacy F.roots / F.office 转发到它）
 // 函数：
 //   api post                      ← lib/api              请求
-//   toast flash                   ← stores/ui            提示条
-//   dialog closeDialog dialogOpen ← stores/ui + DialogHost   通用对话框：dialog() 同步返回 #dlgBody 元素
+//   toast                         ← stores/ui            提示条
+//   dialog closeDialog            ← stores/ui + DialogHost   通用对话框：dialog() 同步返回 #dlgBody 元素
 //   openSession(id|null)          ← 路由 navigate         /s/{id}、/s/new
-//   ensureSession upsertSession   ← stores/chat
+//   upsertSession                 ← stores/chat
 //   addRef resetComposer loadSkills composerInput        ← stores/composer
 //   sessionSectionName sessStatus ← stores/sessions、lib/format
 //   afterPasswordChange           清令牌、回登录页
 //   isMine()                      ← stores/chat.isMine
-//   md sanitizeHtml esc           ← lib/markdown
+//   md esc                        ← lib/markdown
 //   icon orb avatarEl AVATAR_LIST AVATAR_NAMES           ← lib/icons、lib/avatars
-//   fsize fdate ftime rel baseName fmtTok fmtCost localYmd shortPath      ← lib/format（shortPath 带上 fileRoots）
-//   countUp IS_DESKTOP IS_MAC invoke                     小零件和桌面壳
+//   fsize fdate ftime rel baseName fmtTok fmtCost localYmd shortPath      ← lib/format（shortPath 带上 stores/roots）
+//   countUp IS_MAC                                       小零件
+//   showFiles openTrash linkifyPaths kindOf KIND_COLOR   ← features/files、lib/filekind、lib/linkify   知识库（kb.js）和后台（admin.js）还在调；迁完它们（阶段六、七）就删
 // 老代码主动挂出来、组件会调用的：
-//   window.legacy.{showFiles openTrash openMySkills openSkillDetail openUsage showMobile pickAvatar changePassword
-//                  pickSessionSection syncBack openLocalDialog}   （app.js 末尾）
+//   window.legacy.{openMySkills openSkillDetail openUsage showMobile pickAvatar changePassword pickSessionSection}   （app.js 末尾）
 //   window.openKB window.openAdmin window.kbOpenPath window.kbDistill window.kbBeforeClose window.kbInit window.kbLinkify
 //   window.KBDATA window.onKbLoaded window.adminOnSession      （kb.js、admin.js）
 // 老弹层的开关和网址同步见 stores/overlays.ts。
@@ -38,25 +35,28 @@ import { effect } from "@preact/signals";
 import { options } from "preact";
 import { api, post } from "../lib/api";
 import { AVATAR_LIST, AVATAR_NAMES, avatarEl, orb } from "../lib/avatars";
-import { invoke, isDesktop, isMac } from "../lib/desktop";
+import { isMac } from "../lib/desktop";
 import {
   baseName, fdate, fmtCost, fmtTok, fsize, ftime, localYmd, rel, sessStatus, shortPath,
 } from "../lib/format";
 import { iconSvg } from "../lib/icons";
-import { escapeHtml, md, sanitizeHtml, setMarkdownLinkify } from "../lib/markdown";
+import { KIND_COLOR, kindOf } from "../lib/filekind";
+import { linkifyPaths } from "../lib/linkify";
+import { escapeHtml, md, setMarkdownLinkify } from "../lib/markdown";
 import { me, showLogin, store, token } from "../stores/auth";
 import { onEnter } from "../stores/boot";
 import {
-  current, currentSess, ensureSession, isMine, links, onSessionUpdate, upsertSession,
+  current, currentSess, isMine, onSessionUpdate, upsertSession,
 } from "../stores/chat";
 import {
   addRef, composerInput, loadSkills, mySkills, refs, resetComposer, skill, workDir,
 } from "../stores/composer";
 import { onReload } from "../stores/events";
 import { kbCount, kbData } from "../stores/kb";
-import { loadRoots, office, roots } from "../stores/roots";
+import { openTrash, showFiles } from "../stores/files";
+import { loadRoots, roots } from "../stores/roots";
 import { sections, sessionSectionName } from "../stores/sessions";
-import { closeDialog, dialog, flash, openDialog, toast } from "../stores/ui";
+import { closeDialog, dialog, openDialog, toast } from "../stores/ui";
 import type { DialogButton } from "../stores/ui";
 import { navigate, replace, overlayRoute } from "../router";
 
@@ -81,10 +81,8 @@ function accessor(name: string, get: () => unknown, set: (v: any) => void): void
 }
 
 accessor("me", () => me.value, (v) => { me.value = v; });
-accessor("token", () => token.value, (v) => { token.value = v; });
 accessor("current", () => current.value, (v) => { current.value = v; });
 accessor("currentSess", () => currentSess.value, (v) => { currentSess.value = v; });
-accessor("links", () => links.value, (v) => { links.value = v; });
 accessor("sections", () => sections.value, (v) => { sections.value = v; });
 accessor("mySkills", () => mySkills.value, (v) => { mySkills.value = v; });
 g.composer = {
@@ -92,21 +90,12 @@ g.composer = {
   get skill() { return skill.value; }, set skill(v) { skill.value = v; },
   get workDir() { return workDir.value; }, set workDir(v) { workDir.value = v; },
 };
-g.fileRoots = {
-  get: () => ({ roots: roots.value, office: office.value }),
-  set: (p: { roots?: string[]; office?: boolean }) => {
-    if (p.roots) roots.value = p.roots;
-    if (p.office !== undefined) office.value = p.office;
-  },
-};
 
 g.api = api;
 g.post = post;
 g.toast = toast;
-g.flash = flash;
 g.esc = escapeHtml;
 g.md = md;
-g.sanitizeHtml = sanitizeHtml;
 g.icon = iconSvg;
 g.orb = orb;
 g.avatarEl = avatarEl;
@@ -115,13 +104,15 @@ g.AVATAR_NAMES = AVATAR_NAMES;
 g.fsize = fsize; g.fdate = fdate; g.ftime = ftime; g.rel = rel; g.baseName = baseName;
 g.fmtTok = fmtTok; g.fmtCost = fmtCost; g.localYmd = localYmd;
 g.shortPath = (p: string) => shortPath(p, roots.value);
+g.showFiles = (path?: string | null): void => showFiles(path ?? null);
+g.openTrash = openTrash;
+g.linkifyPaths = (el: HTMLElement): void => linkifyPaths(el, roots.value);
+g.kindOf = kindOf;
+g.KIND_COLOR = KIND_COLOR;
 g.sessStatus = sessStatus;
 g.sessionSectionName = sessionSectionName;
 g.isMine = () => isMine.value;
-g.IS_DESKTOP = isDesktop();
 g.IS_MAC = isMac();
-g.invoke = invoke;
-g.ensureSession = ensureSession;
 g.upsertSession = upsertSession;
 g.addRef = addRef;
 g.resetComposer = resetComposer;
@@ -151,7 +142,6 @@ g.dialog = (title: string, html: string, buttons: DialogButton[] = [], wide = fa
   return document.getElementById("dlgBody");
 };
 g.closeDialog = closeDialog;
-g.dialogOpen = (): boolean => !!dialog.value;
 
 g.afterPasswordChange = async (): Promise<void> => {
   token.value = "";

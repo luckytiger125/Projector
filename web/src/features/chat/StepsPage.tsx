@@ -1,7 +1,7 @@
 // 步骤记录：这次对话的完整过程。桌面上是盖在对话上的册页，手机上是全屏页。
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../../lib/api";
-import { Icon } from "../../lib/icons";
+import { Sheet } from "../../components/Sheet";
 import { closeOverlay, overlayRoute } from "../../router";
 
 interface Step { kind: string; name?: string; text: string; error?: boolean }
@@ -23,27 +23,18 @@ export function StepsPage() {
   useEffect(() => { if (data && body.current) body.current.scrollTop = body.current.scrollHeight; }, [data]);
   if (!id) return null;
   return (
-    <div class="veil" onMouseDown={(e) => { if (e.target === e.currentTarget) closeOverlay(); }}>
-      <div class="sheet">
-        <div class="sheet-head">
-          <button class="icon-btn m-back" title="返回" aria-label="返回" onClick={() => closeOverlay()}><Icon name="chevL" size={20} /></button>
-          <div class="ttl"><div class="kicker"><span>记录</span></div><h3>完整过程</h3></div>
-          <span class="note">{data?.note || ""}</span>
-          <button class="icon-btn x" title="关闭" aria-label="关闭" onClick={() => closeOverlay()}><Icon name="x" size={18} /></button>
-        </div>
-        <div class="sheet-bar" />
-        <div class="steps-body" ref={body}>
-          {!data && !err && <div class="empty">读取中…</div>}
-          {err && <div class="err">{err}</div>}
-          {data && !data.steps.length && <div class="empty">没有记录</div>}
-          {data?.steps.map((s, i) => (
-            <div key={i} class={`step ${s.kind} ${s.error ? "err" : ""}`} style={`animation-delay:${Math.min(i, 20) * 15}ms`}>
-              <div class="k">{LABEL[s.kind] || s.kind}{s.name ? " · " + s.name : ""}</div>
-              <pre>{s.text}</pre>
-            </div>
-          ))}
-        </div>
+    <Sheet kicker="记录" title="完整过程" note={data?.note || ""} onClose={() => closeOverlay()}>
+      <div class="steps-body" ref={body}>
+        {!data && !err && <div class="empty">读取中…</div>}
+        {err && <div class="err">{err}</div>}
+        {data && !data.steps.length && <div class="empty">没有记录</div>}
+        {data?.steps.map((s, i) => (
+          <div key={i} class={`step ${s.kind} ${s.error ? "err" : ""}`} style={`animation-delay:${Math.min(i, 20) * 15}ms`}>
+            <div class="k">{LABEL[s.kind] || s.kind}{s.name ? " · " + s.name : ""}</div>
+            <pre>{s.text}</pre>
+          </div>
+        ))}
       </div>
-    </div>
+    </Sheet>
   );
 }

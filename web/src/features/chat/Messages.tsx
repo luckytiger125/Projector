@@ -3,6 +3,7 @@
 import { memo } from "preact/compat";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Icon } from "../../lib/icons";
+import { linkifyPaths } from "../../lib/linkify";
 import { md } from "../../lib/markdown";
 import { baseName, hm, pad, shortPath, toolMeta as toolMetaOf } from "../../lib/format";
 import type { Approval, Message, Tool } from "../../lib/types";
@@ -10,6 +11,7 @@ import {
   approvals, cancelQueued, current, currentSess, decideApproval, hasMore, isMine, isWaiting, liveActive, liveSteps,
   liveText, liveThinking, liveTools, loadOlder, loading, messages, olderState, queued, seen, thinkOpen,
 } from "../../stores/chat";
+import { showFiles } from "../../stores/files";
 import { roots } from "../../stores/roots";
 import { toast } from "../../stores/ui";
 
@@ -66,10 +68,10 @@ const mdOf = (m: Message): string => {
   return h;
 };
 
-/** 回复里的文件路径变成可点的小标签（老的文件库代码提供，要有根目录才能认出路径） */
+/** 回复里的文件路径变成可点的小标签（要有根目录才能认出路径） */
 function useLinkify(ref: { current: HTMLElement | null }, dep: unknown): void {
   const n = roots.value.length;
-  useLayoutEffect(() => { if (ref.current && n) window.legacy.linkifyPaths(ref.current); }, [dep, n]);
+  useLayoutEffect(() => { if (ref.current && n) linkifyPaths(ref.current, roots.value); }, [dep, n]);
 }
 
 // ---------- 一条已完成的消息 ----------
@@ -265,7 +267,7 @@ export function MessageList() {
   const older = () => loadOlder(() => { const el = ref.current!; anchor = { h: el.scrollHeight, top: el.scrollTop }; });
   const onClick = (e: MouseEvent) => {
     const a = (e.target as Element).closest("[data-fpath]") as HTMLElement | null;
-    if (a?.dataset.fpath) window.legacy.showFiles(a.dataset.fpath);
+    if (a?.dataset.fpath) showFiles(a.dataset.fpath);
   };
 
   const empty = !msgs.length && !live && !apps.length && !q.length;

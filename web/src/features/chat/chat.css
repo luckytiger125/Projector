@@ -17,21 +17,23 @@
 .px .older { display: block; margin: 0 auto var(--s-6); }
 .px .entry { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: var(--s-4); padding: var(--s-4) 0; animation: rise var(--d-slow) var(--ease) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
-.px .entry .mg { text-align: right; padding-top: 3px; border-right: 1px solid var(--hair); padding-right: var(--s-4); position: relative; }
+.px .entry .mg { min-width: 0; text-align: right; padding-top: 3px; border-right: 1px solid var(--hair); padding-right: var(--s-4); position: relative; }
 .px .entry .mg::after { content: ""; position: absolute; right: -4px; top: 9px; width: 7px; height: 7px; background: var(--paper-0); border: 1px solid var(--ink-3); border-radius: 50%; }
 .px .entry.user .mg::after { background: var(--navy); border-color: var(--navy); }
-.px .entry .who { display: block; font: 700 var(--t-12) var(--f-serif); letter-spacing: .1em; }
+.px .entry .who { display: block; font: 700 var(--t-12) var(--f-serif); letter-spacing: .1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .px .entry .at { display: block; font: 11px var(--f-mono); color: var(--ink-4); }
 .px .entry.user .bd { font: 500 var(--t-16)/1.75 var(--f-serif); color: var(--ink-1); }
 .px .entry .bd { min-width: 0; font-size: 15px; }
 .px .md p + p, .px .md p + ul, .px .md ul + p, .px .md p + pre, .px .md pre + p, .px .md p + table, .px .md h3 + p { margin-top: var(--s-3); }
 .px .md h3 { font: 700 var(--t-16) var(--f-serif); margin-top: var(--s-5); }
 .px .md ul { padding-left: 1.3em; }
+.px .md table + ul, .px .md table + ol, .px .md table + pre, .px .md table + blockquote, .px .md ul + table, .px .md ol + table, .px .md pre + table, .px .md blockquote + p { margin-top: var(--s-3); }
 .px .md code { font: 13px var(--f-mono); background: var(--navy-soft); padding: 1px 5px; border-radius: var(--r-1); }
 .px .md pre { font: 13px/1.6 var(--f-mono); background: var(--navy); color: var(--on-navy); padding: var(--s-3) var(--s-4); border-radius: var(--r-1); overflow-x: auto; }
-.px .md table { border-collapse: collapse; font-size: var(--t-13); width: 100%; }
-.px .md th { text-align: left; font-weight: 600; border-bottom: 1.5px solid var(--ink-1); padding: var(--s-1) var(--s-3) var(--s-1) 0; }
-.px .md td { border-bottom: 1px solid var(--hair); padding: 6px var(--s-3) 6px 0; }
+/* 老的 .md 表格规则（base.css，知识库和后台还在用）给单元格加了四周边框和底色，这里清掉：样稿里表格只有横线 */
+.px .md table { display: table; margin: 0; overflow: visible; border-collapse: collapse; font-size: var(--t-13); width: 100%; }
+.px .md th { text-align: left; font-weight: 600; background: none; border: 0; border-bottom: 1.5px solid var(--ink-1); padding: var(--s-1) var(--s-3) var(--s-1) 0; }
+.px .md td { border: 0; border-bottom: 1px solid var(--hair); padding: 6px var(--s-3) 6px 0; }
 .px .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
 .px .chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 var(--s-2); font: var(--t-12) var(--f-sans); background: var(--paper-2); border: 1px solid var(--hair-strong); border-radius: var(--r-1); color: var(--ink-2); }
 .px .fold { display: inline-flex; align-items: center; gap: var(--s-2); height: 28px; padding: 0 var(--s-2); margin: 0 0 var(--s-2) calc(-1 * var(--s-2)); font-size: var(--t-13); color: var(--ink-3); border-radius: var(--r-1); }
@@ -92,27 +94,3 @@
 .px .opt input { flex: 1; border: 0; outline: none; background: none; }
 .px .ask .ft { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3) var(--s-2) var(--s-4); border-top: 1px solid var(--hair-strong); background: var(--paper-1); }
 .px .ask .ft .hint { flex: 1; font-size: var(--t-12); color: var(--ink-3); text-align: right; }
-/* ── 弹层统一骨架：一张压在页面上的册页 ── */
-.px .veil { position: absolute; inset: 0; background: rgba(19, 31, 49, .34); display: grid; place-items: center; padding: var(--s-8); animation: fade var(--d-slow) both; z-index: 5; }
-@keyframes fade { from { opacity: 0; } }
-.px .sheet { width: min(1120px, 100%); height: min(760px, 100%); background: var(--paper-0); border: 1px solid var(--hair-strong); border-radius: var(--r-2); box-shadow: var(--shadow-2); display: flex; flex-direction: column; overflow: hidden; animation: lift var(--d-slow) var(--ease) both; }
-@keyframes lift { from { opacity: 0; transform: translateY(10px) scale(.992); } }
-.px .sheet-head { display: flex; align-items: end; gap: var(--s-4); padding: var(--s-5) var(--s-6) 0; }
-.px .sheet-head .ttl { flex: 1; min-width: 0; }
-.px .sheet-head h3 { font: 700 var(--t-28)/var(--lh-tight) var(--f-serif); letter-spacing: .04em; }
-.px .sheet-bar { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-3) var(--s-6) 0; border-bottom: 2px solid var(--rule); }
-.px .tabs { display: flex; gap: var(--s-5); flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.px .tabs a { position: relative; padding: var(--s-2) 0 var(--s-3); font-size: var(--t-14); color: var(--ink-3); white-space: nowrap; text-decoration: none; transition: color var(--d-fast); }
-.px .tabs a:hover { color: var(--ink-1); }
-.px .tabs a.on { color: var(--ink-1); font-weight: 600; }
-.px .tabs a.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 4px; background: var(--vermilion); }
-.px .tabs a sup { font: 600 10px var(--f-mono); color: var(--vermilion); margin-left: 2px; }
-.px .sheet-bar .searchbox { width: 220px; margin-bottom: var(--s-2); height: 32px; }
-.px .sheet-body { flex: 1; min-height: 0; display: flex; }
-.px .pane { flex: 1; min-width: 0; overflow-y: auto; padding: var(--s-5) var(--s-6) var(--s-6); }
-.px .pane.narrow { flex: 0 0 320px; border-right: 1px solid var(--hair-strong); background: var(--paper-1); padding: var(--s-3); }
-.px .pane.preview { flex: 0 0 40%; border-left: 1px solid var(--hair-strong); background: var(--paper-2); }
-.px .note-hint { font-size: var(--t-13); color: var(--ink-3); margin-bottom: var(--s-4); }
-.px .crumbs { display: flex; align-items: center; gap: var(--s-1); font-size: var(--t-13); color: var(--ink-3); margin-bottom: var(--s-3); flex-wrap: wrap; }
-.px .crumbs b { color: var(--ink-1); }
-.px .crumbs .sp { flex: 1; }

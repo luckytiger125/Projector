@@ -3,6 +3,8 @@ import { useEffect } from "preact/hooks";
 import { Login } from "./features/auth/Login";
 import { Chat } from "./features/chat/Chat";
 import { StepsPage } from "./features/chat/StepsPage";
+import { FilesHost } from "./features/files/Host";
+import { FilesSheet } from "./features/files/Files";
 import { Board } from "./features/home/Board";
 import { DialogHost, Palette, Toasts } from "./features/shell/Overlays";
 import { MobileTabs, Rail, Sidebar } from "./features/shell/Shell";
@@ -12,7 +14,7 @@ import { dialog, dismissDialog, paletteOpen } from "./stores/ui";
 
 declare const window: Window & { kbBeforeClose?: () => boolean };
 
-/** 全局快捷键：Ctrl/⌘+K 命令面板；Esc 按层关闭（命令面板、对话框、步骤记录页、老弹层） */
+/** 全局快捷键：Ctrl/⌘+K 命令面板；Esc 按层关闭（命令面板、对话框、文件库和步骤记录页、老弹层） */
 function useGlobalKeys() {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -25,13 +27,14 @@ function useGlobalKeys() {
       if (e.key !== "Escape") return;
       if (paletteOpen.value) { paletteOpen.value = false; return; }
       if (dialog.value) { dismissDialog(); return; }
-      for (const id of ["filesBox", "kbBox", "adminBox"]) {
+      for (const id of ["kbBox", "adminBox"]) {
         const box = document.getElementById(id);
         if (!box || !box.classList.contains("show")) continue;
         if (id === "kbBox") window.kbBeforeClose?.(); else box.classList.remove("show");
         return;
       }
-      if (overlayRoute.value?.name === "steps") closeOverlay();
+      const o = overlayRoute.value?.name;
+      if (o === "steps" || o === "files") closeOverlay();
     };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
@@ -53,6 +56,8 @@ export function App() {
         <main class="main">{u ? (chat ? <Chat /> : <Board />) : null}</main>
       </div>
       {u && <StepsPage />}
+      {u && <FilesSheet />}
+      <FilesHost />
       <DialogHost />
       <Palette />
       {loginVisible.value && !u && <Login />}

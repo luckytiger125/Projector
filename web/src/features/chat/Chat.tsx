@@ -7,6 +7,8 @@ import { me } from "../../stores/auth";
 import { current, currentSess, isMine, links, messages, questions, renameSession, setBypass } from "../../stores/chat";
 import { workDir } from "../../stores/composer";
 import { conn } from "../../stores/events";
+import { showFiles } from "../../stores/files";
+import { syncBack } from "../files/local";
 import { sessionSectionName } from "../../stores/sessions";
 import { confirmBox, paletteOpen, promptBox, toast } from "../../stores/ui";
 import { isMac } from "../../lib/desktop";
@@ -50,7 +52,7 @@ function ChatHead() {
       <div class="chat-meta">
         <span>工作目录
           <b><button class="meta-link" type="button" disabled={!mine || !!(s && s.claude_session)} title={`${wd || "默认工作目录"}\n工作文件夹：Claude 在这个文件夹里干活。只能在会话开始前选`}
-            onClick={() => window.legacy.showFiles(s ? s.work_dir : (workDir.value || ""), "workdir")}>
+            onClick={() => showFiles(s ? (s.work_dir ?? "") : (workDir.value || ""), "workdir")}>
             <Icon name="folder" size={13} />{wd ? baseName(wd) : "默认工作目录"}</button></b></span>
         <span>分区
           <b><button class="meta-link" type="button" disabled={!s || !mine} onClick={() => window.legacy.pickSessionSection()}>
@@ -77,7 +79,6 @@ function Banners() {
   const s = currentSess.value;
   const mine = isMine.value;
   const ls = links.value;
-  const L = window.legacy;
   return (
     <>
       {!mine && s && <div class="banner view"><Icon name="eye" size={16} />你在查看 <b>{s.owner}</b> 的会话，只能看。待确认的操作可以代为处理。</div>}
@@ -86,8 +87,8 @@ function Banners() {
           <Icon name="laptop" size={15} /><span>本机文件</span>
           {ls.map((l: any) => (
             <span key={l.id} class="lk">
-              <span class="chip ref" title={l.abs} onClick={() => L.showFiles(l.path)}><Icon name="folder" size={12} /><span>{l.name}</span></span>
-              {mine && <button class="btn sm" onClick={() => L.syncBack(l.id)}><Icon name="sync" size={13} />查看改动 / 同步回本机</button>}
+              <span class="chip ref" title={l.abs} onClick={() => showFiles(l.path as string)}><Icon name="folder" size={12} /><span>{l.name}</span></span>
+              {mine && <button class="btn sm" onClick={() => void syncBack(l.id)}><Icon name="sync" size={13} />查看改动 / 同步回本机</button>}
             </span>
           ))}
         </div>

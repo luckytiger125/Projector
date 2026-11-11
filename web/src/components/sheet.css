@@ -1,0 +1,74 @@
+/* 弹层统一骨架（文件库、知识库、技能、用量、后台……共用）。拆自 docs/design/mock.css，只用 tokens.css 的变量。 */
+/* ── 弹层统一骨架：一张压在页面上的册页 ── */
+.px .veil { position: absolute; inset: 0; background: rgba(19, 31, 49, .34); display: grid; place-items: center; padding: var(--s-8); animation: fade var(--d-slow) both; z-index: 5; }
+@keyframes fade { from { opacity: 0; } }
+.px .sheet { width: min(1120px, 100%); height: min(760px, 100%); background: var(--paper-0); border: 1px solid var(--hair-strong); border-radius: var(--r-2); box-shadow: var(--shadow-2); display: flex; flex-direction: column; overflow: hidden; animation: lift var(--d-slow) var(--ease) both; }
+@keyframes lift { from { opacity: 0; transform: translateY(10px) scale(.992); } }
+.px .sheet-head { display: flex; align-items: end; gap: var(--s-4); padding: var(--s-5) var(--s-6) 0; }
+.px .sheet-head .ttl { flex: 1; min-width: 0; }
+.px .sheet-head h3 { font: 700 var(--t-28)/var(--lh-tight) var(--f-serif); letter-spacing: .04em; }
+.px .sheet-bar { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-3) var(--s-6) 0; border-bottom: 2px solid var(--rule); }
+.px .tabs { display: flex; gap: var(--s-5); flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.px .tabs a, .px .tabs button { position: relative; padding: var(--s-2) 0 var(--s-3); font-size: var(--t-14); color: var(--ink-3); white-space: nowrap; text-decoration: none; transition: color var(--d-fast); }
+.px .tabs a:hover, .px .tabs button:hover { color: var(--ink-1); }
+.px .tabs a.on, .px .tabs button.on { color: var(--ink-1); font-weight: 600; }
+.px .tabs a.on::after, .px .tabs button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 4px; background: var(--vermilion); }
+.px .tabs a sup, .px .tabs button sup { font: 600 10px var(--f-mono); color: var(--vermilion); margin-left: 2px; }
+.px .sheet-bar .searchbox { width: 220px; margin-bottom: var(--s-2); height: 32px; }
+.px .sheet-body { flex: 1; min-height: 0; display: flex; }
+.px .pane { flex: 1; min-width: 0; overflow-y: auto; padding: var(--s-5) var(--s-6) var(--s-6); }
+.px .pane.narrow { flex: 0 0 320px; border-right: 1px solid var(--hair-strong); background: var(--paper-1); padding: var(--s-3); }
+.px .pane.preview { flex: 0 0 40%; border-left: 1px solid var(--hair-strong); background: var(--paper-2); }
+.px .note-hint { font-size: var(--t-13); color: var(--ink-3); margin-bottom: var(--s-4); }
+.px .crumbs { display: flex; align-items: center; gap: var(--s-1); font-size: var(--t-13); color: var(--ink-3); margin-bottom: var(--s-3); flex-wrap: wrap; }
+.px .crumbs b { color: var(--ink-1); }
+.px .crumbs .sp { flex: 1; }
+
+/* 标题栏里的说明文字、手机上的返回键、没有页签时只留一条粗线的工具条（步骤记录） */
+.px .sheet-head .note { font-size: var(--t-12); color: var(--ink-3); }
+.px .sheet-head .m-back { display: none; }
+.px .sheet-head .tools { display: flex; align-items: center; gap: var(--s-2); }
+.px .sheet-bar.rule { margin-bottom: 0; height: 0; }
+.px .sheet-bar .searchbox { margin-left: auto; }
+.px .sheet-note { margin: var(--s-2) var(--s-6) 0; }
+.px .sheet-body > .pane.preview { display: flex; flex-direction: column; padding: 0; }
+.px .empty { color: var(--ink-3); }
+
+/* 账页式列表（样稿里的 .ledger）：窄屏时一行一条，列不丢 */
+.px .ledger { width: 100%; border-collapse: collapse; font-size: var(--t-13); }
+.px .ledger th { text-align: left; font: 600 11px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); padding: var(--s-2) var(--s-3) var(--s-2) 0; border-bottom: 1.5px solid var(--ink-1); white-space: nowrap; }
+.px .ledger td { padding: 0 var(--s-3) 0 0; height: 44px; border-bottom: 1px solid var(--hair); vertical-align: middle; }
+.px .ledger tbody tr:hover td { background: var(--navy-soft); }
+.px .ledger tr.on td { background: var(--paper-2); }
+.px .ledger .nm { display: flex; align-items: center; gap: var(--s-2); font-size: var(--t-14); min-width: 0; max-width: 100%; text-align: left; }
+.px .ledger .nm > span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.px .ledger .num { font-family: var(--f-mono); color: var(--ink-2); white-space: nowrap; }
+.px .ledger .r { text-align: right; padding-right: 0; white-space: nowrap; }
+.px .ledger .ic { color: var(--ink-3); }
+.px .ledger .ctr { text-align: center; color: var(--ink-3); padding: var(--s-8) 0; height: auto; border: 0; }
+.px .ledger .ctr:hover { background: none; }
+
+/* 手机上：弹层第一级是列表，第二级（预览、正文）单独一屏 */
+@media (max-width: 720px) {
+  .px .sheet-body:not(.m-detail) > .pane.preview { display: none; }
+  .px .sheet-body.m-detail > .pane:not(.preview) { display: none; }
+  .px .sheet-body > .pane.preview { flex: 1; border: 0; }
+  .px .pane { padding: var(--s-4); }
+  .px .sheet-head .tools { overflow-x: auto; scrollbar-width: none; max-width: 60%; }
+  .px .sheet-head .tools .btn { width: var(--hit-touch); height: var(--hit-touch); padding: 0; flex: none; }
+  .px .sheet-head .tools .btn .lb { display: none; }
+  /* 第二级（预览、正文）一屏只做一件事：收起页签、搜索和工具按钮，标题栏下面留一条粗线 */
+  .px .sheet.m-detail .sheet-bar, .px .sheet.m-detail .sheet-head .tools, .px .sheet.m-detail > .fx-pickbar, .px .sheet.m-detail > .fx-prog { display: none; }
+  .px .sheet.m-detail .sheet-head { padding-bottom: var(--s-2); border-bottom: 2px solid var(--rule); }
+  .px .sheet-note { margin: var(--s-2) var(--s-4) 0; }
+  .px .ledger thead { display: none; }
+  .px .ledger tr { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s-3); padding: var(--s-2) 104px var(--s-2) 0; border-bottom: 1px solid var(--hair); min-height: 56px; }
+  .px .ledger tr.on { background: var(--paper-2); box-shadow: -16px 0 0 var(--paper-2), 16px 0 0 var(--paper-2); }
+  .px .ledger tbody tr:hover td, .px .ledger tr.on td { background: none; }
+  .px .ledger td { height: auto; border: 0; padding: 0; }
+  .px .ledger td.nmc { flex: 0 0 100%; min-width: 0; }
+  .px .ledger td.r { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+  .px .ledger td.sub, .px .ledger td[data-l] { font-size: var(--t-12); color: var(--ink-3); display: inline-flex; align-items: center; gap: var(--s-1); }
+  .px .ledger td[data-l]::before { content: attr(data-l); }
+  .px .ledger td.ctr { flex: 1 1 100%; justify-content: center; }
+}

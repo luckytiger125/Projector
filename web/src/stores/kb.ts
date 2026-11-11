@@ -5,7 +5,7 @@ import { computed, signal } from "@preact/signals";
 export interface KbNote { path: string; title?: string; type?: string; note?: string; created?: number; exists?: boolean }
 
 export const kbCount = signal(0);
-export const kbData = signal<{ today_new?: KbNote[]; recent?: KbNote[] } | null>(null);
+export const kbData = signal<{ root?: string; today_new?: KbNote[]; recent?: KbNote[] } | null>(null);
 
 /** 今天新增的知识库内容。老代码的规则：优先用 today_new，否则从 recent 里挑今天新建的 */
 export const kbToday = computed<KbNote[]>(() => {

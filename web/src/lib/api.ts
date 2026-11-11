@@ -42,3 +42,11 @@ export function api<T = any>(path: string, opts: ApiOptions = {}): Promise<T> {
 
 export const post = <T = any>(path: string, body?: unknown, method = "POST"): Promise<T> =>
   api<T>(path, { method, body: JSON.stringify(body || {}) });
+
+/** 取二进制内容（文件预览：docx、xlsx）。带 Authorization 头；失败抛“读取失败” */
+export async function apiBlob(path: string): Promise<Blob> {
+  const r = await fetch(path, { headers: { Authorization: "Bearer " + hooks.getToken() } });
+  if (r.status === 401) { hooks.onUnauthorized(); throw new Error("请先登录"); }
+  if (!r.ok) throw new Error("读取失败");
+  return r.blob();
+}

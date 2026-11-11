@@ -1,19 +1,19 @@
-// 路由 ↔ 还由老代码渲染的弹层（文件库、知识库、管理后台，以及对话框形式的技能、用量、手机二维码）。
-// 网址变成 /files、/kb、/skills、/usage、/mobile、/admin/{tab} 时打开对应的老弹层；老弹层被关掉（关闭按钮、Esc、点遮罩）时，
+// 路由 ↔ 还由老代码渲染的弹层（知识库、管理后台，以及对话框形式的技能、用量、手机二维码）。文件库已经是组件，自己跟着网址走（stores/files.ts）。
+// 网址变成 /kb、/skills、/usage、/mobile、/admin/{tab} 时打开对应的老弹层；老弹层被关掉（关闭按钮、Esc、点遮罩）时，
 // 把网址退回背景页。老代码自己打开的弹层（比如点一个文件小标签打开文件库）也会把网址更新成对应的路径。
-// 弹层内部的切换（文件库进目录、知识库切页签和笔记、技能详情）暂时不写进网址。
+// 弹层内部的切换（知识库切页签和笔记、技能详情）暂时不写进网址。
 import { effect, untracked } from "@preact/signals";
 import type { Route } from "../router";
 import { addLeaveGuard, closeOverlay, navigate, overlayRoute, replace } from "../router";
 import { me } from "./auth";
 import { loadSkills } from "./composer";
-import { closeDialog, dialog } from "./ui";
+import { closeDialog, dialog, dismissDialog } from "./ui";
 
 declare const window: Window & { legacy: any; openKB: (v?: string) => Promise<void>; openAdmin: (t?: string) => void; kbOpenPath?: (p: string) => void; kbBeforeClose?: () => boolean };
 
-const BOXES: Array<[string, string]> = [["filesBox", "files"], ["kbBox", "kb"], ["adminBox", "admin"]];
-/** 用对话框显示的老弹层：技能、用量、手机二维码、回收站 */
-const isDialogRoute = (r: Route): boolean => r.name === "skills" || r.name === "usage" || r.name === "mobile" || (r.name === "files" && !!r.trash);
+const BOXES: Array<[string, string]> = [["kbBox", "kb"], ["adminBox", "admin"]];
+/** 用对话框显示的老弹层：技能、用量、手机二维码 */
+const isDialogRoute = (r: Route): boolean => r.name === "skills" || r.name === "usage" || r.name === "mobile";
 const el = (id: string) => document.getElementById(id);
 const shown = (id: string) => !!el(id)?.classList.contains("show");
 
@@ -24,18 +24,15 @@ function apply(r: Route | null): void {
   const key = r ? JSON.stringify(r) : null;
   if (key === lastKey) return;
   lastKey = key;
-  const keep = r ? (r.name === "files" ? "filesBox" : r.name === "kb" ? "kbBox" : r.name === "admin" ? "adminBox" : "") : "";
+  const keep = r ? (r.name === "kb" ? "kbBox" : r.name === "admin" ? "adminBox" : "") : "";
   for (const [id] of BOXES) {
     if (id === keep || !shown(id)) continue;
     if (id === "kbBox") window.kbBeforeClose?.(); else el(id)?.classList.remove("show");
   }
-  if (r === null && dialog.peek()) closeDialog();
+  if (r === null && dialog.peek()) dismissDialog();   // 用户式关闭：对话框上挂着的 Promise（确认、同名处理）要能收到“取消”
   if (!r) return;
   const L = window.legacy;
   switch (r.name) {
-    case "files":
-      if (r.trash) void L.openTrash(); else if (!shown("filesBox")) L.showFiles(r.path ?? null);
-      break;
     case "kb":
       if (!shown("kbBox")) void window.openKB(r.tab).then(() => { if (r.note) window.kbOpenPath?.(r.note); });
       break;

@@ -55,7 +55,7 @@
   .px .sheet-head .kicker { display: none; }
   .px .m-back { display: grid; }
   .px .sheet-head .x { display: none; }
-  .px .sheet-bar { margin: var(--s-1) var(--s-4) 0; flex-wrap: wrap; }
+  .px .sheet-bar { margin: var(--s-2) var(--s-4) 0; flex-wrap: wrap; }
   .px .sheet-bar .searchbox { width: 100%; order: -1; height: var(--hit); }
   .px .icon-btn { width: var(--hit-touch); height: var(--hit-touch); }
   /* 表格变成一行一张小卡 */

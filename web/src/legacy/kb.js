@@ -95,7 +95,6 @@ function kbLinkify(text, links) {
   })).join("");
 }
 window.kbLinkify = kbLinkify;
-window.kbRelOf = kbRelOf;  // 经典脚本里顶层函数会自动挂 window，模块里不会；app.js 用 window.kbRelOf 判断
 
 // ---------- 打开和关闭 ----------
 
@@ -705,7 +704,6 @@ async function kbOrganize(paths, label) {
       const s = await post("/api/sessions", { title: ("整理：" + name).slice(0, 20), section_id });
       upsertSession(s);
       await post(`/api/sessions/${s.id}/messages`, { action: "organize", refs: paths });
-      $("filesBox").classList.remove("show");
       if ($("kbBox").classList.contains("show")) kbClose();
       openSession(s.id);
     } }]);
@@ -720,26 +718,6 @@ document.addEventListener("click", e => {
   const rel = fp && kbRelOf(fp.dataset.fpath);
   if (rel) { e.preventDefault(); e.stopPropagation(); kbOpenPath(rel); }
 }, true);
-
-// 文件预览时：这份文件有没有知识库卡片？本身是不是知识库笔记？
-async function kbFileBanner(entry) {
-  const box = $("fcontent");
-  box.querySelector(".kb-fbanner")?.remove();
-  if (!KB.data || entry.dir) return;
-  const rel = kbRelOf(entry.abs);
-  let html = "";
-  if (rel) html = `${icon("book", 15)}<span>这是知识库里的笔记</span><button class="btn small" data-kopen="${esc(rel)}">在知识库中打开</button>`;
-  else {
-    const r = await api("/api/kb/cards?path=" + encodeURIComponent(entry.path)).catch(() => ({ cards: [] }));
-    if (F.sel !== entry.path || !r.cards.length) return;
-    const c = r.cards[0];
-    html = `${icon("book", 15)}<span>知识库里有这份文件的卡片：<b>${esc(c.title)}</b>${c.source_state === "changed" ? '<span class="tag warn">文件改过，卡片可能过时</span>' : ""}</span><button class="btn small" data-kopen="${esc(c.path)}">看卡片</button>`;
-  }
-  if (F.sel !== entry.path) return;
-  box.insertAdjacentHTML("afterbegin", `<div class="kb-fbanner">${html}</div>`);
-  box.querySelector("[data-kopen]").onclick = ev => { $("filesBox").classList.remove("show"); kbOpenPath(ev.currentTarget.dataset.kopen); };
-}
-window.kbFileBanner = kbFileBanner;
 
 $("kbLogo").innerHTML = icon("book", 19);
 $("kbQIcon").innerHTML = icon("search", 15);
