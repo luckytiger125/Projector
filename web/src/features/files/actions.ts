@@ -13,9 +13,9 @@ import {
 } from "../../stores/files";
 import type { FileEntry, TrashItem } from "../../stores/files";
 import { roots } from "../../stores/roots";
+import { organize as organizeKb } from "../kb/actions";
 import { confirmBox, openDialog, promptBox, toast } from "../../stores/ui";
 
-declare const window: Window & { kbOrganize?: (paths: string[], label: string) => void };
 
 // ---------- 新建、改名、删除 ----------
 export async function mkdirHere(): Promise<void> {
@@ -188,9 +188,9 @@ export async function pickWorkDir(): Promise<void> {
   } catch (e) { toast((e as Error).message, "err"); }
 }
 
-/** 让 Claude 读一遍写文件卡片（对话框在知识库那边，还是老代码） */
+/** 让 Claude 读一遍写文件卡片（对话框在 features/kb） */
 export function organize(paths: string[], label: string): void {
-  window.kbOrganize?.(paths, label);
+  void organizeKb(paths, label);
 }
 
 // ---------- 用本机程序打开（桌面壳） ----------

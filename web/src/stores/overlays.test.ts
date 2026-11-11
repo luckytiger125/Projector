@@ -4,13 +4,11 @@ import { me } from "./auth";
 import { startOverlaySync } from "./overlays";
 import { closeDialog } from "./ui";
 
-// 假的老弹层：两个盒子和老代码挂在 window 上的入口
+// 假的老弹层：管理后台的盒子和老代码挂在 window 上的入口
 function setup() {
-  document.body.innerHTML = '<div id="kbBox" class="overlay"></div><div id="adminBox" class="overlay"></div>';
+  document.body.innerHTML = '<div id="adminBox" class="overlay"></div>';
   const w = window as any;
-  w.openKB = vi.fn(async () => { document.getElementById("kbBox")!.classList.add("show"); });
   w.openAdmin = vi.fn(() => document.getElementById("adminBox")!.classList.add("show"));
-  w.kbBeforeClose = vi.fn(() => { document.getElementById("kbBox")!.classList.remove("show"); return true; });
   return w;
 }
 const wait = (ms = 20) => new Promise((r) => setTimeout(r, ms));
@@ -25,19 +23,6 @@ beforeEach(() => {
 afterEach(() => { stop?.(); stopRouter(); });
 
 describe("路由 ↔ 老弹层", () => {
-  it("网址变成 /kb：打开知识库；关掉知识库：网址退回背景", async () => {
-    const w = setup(); stop = startOverlaySync();
-    navigate("/kb");
-    await wait();
-    expect(w.openKB).toHaveBeenCalledTimes(1);
-    expect(document.getElementById("kbBox")!.classList.contains("show")).toBe(true);
-    // 老代码自己关掉（Esc、关闭按钮）
-    document.getElementById("kbBox")!.classList.remove("show");
-    await wait();
-    await wait(50);
-    expect(location.pathname).toBe("/s/abc");
-  });
-
   it("老代码自己打开的弹层，网址跟上而且只打开一次", async () => {
     const w = setup(); stop = startOverlaySync();
     document.getElementById("adminBox")!.classList.add("show");   // 比如后台自己打开
@@ -47,12 +32,14 @@ describe("路由 ↔ 老弹层", () => {
     expect(loc.value.state.bg).toBe("/s/abc");
   });
 
-  it("文件库是组件，不归老弹层同步管：/files 不会去开老弹层", async () => {
+  it("文件库、知识库是组件，不归老弹层同步管：/files /kb 不会去开老弹层", async () => {
     const w = setup(); stop = startOverlaySync();
     navigate("/files");
     await wait();
     expect(location.pathname).toBe("/files");
-    expect(w.openKB).not.toHaveBeenCalled();
+    navigate("/kb/graph");
+    await wait();
+    expect(location.pathname).toBe("/kb/graph");
     expect(w.openAdmin).not.toHaveBeenCalled();
   });
 
@@ -63,7 +50,6 @@ describe("路由 ↔ 老弹层", () => {
       await wait();
       expect(location.pathname + "").toBe(p);
     }
-    expect(w.openKB).not.toHaveBeenCalled();
     expect(w.openAdmin).not.toHaveBeenCalled();
   });
 
@@ -98,17 +84,5 @@ describe("路由 ↔ 老弹层", () => {
     await wait();
     expect(w.openAdmin).not.toHaveBeenCalled();
     expect(location.pathname).toBe("/");
-  });
-
-  it("知识库有未保存的编辑：离开前由老代码的确认框拦住", async () => {
-    const w = setup(); stop = startOverlaySync();
-    navigate("/kb");
-    await wait();
-    w.kbBeforeClose.mockImplementation(() => false);   // 用户在确认框里选了“不离开”
-    expect(navigate("/s/zzz")).toBe(false);
-    expect(location.pathname).toBe("/kb");
-    w.kbBeforeClose.mockImplementation(() => { document.getElementById("kbBox")!.classList.remove("show"); return true; });
-    expect(navigate("/s/zzz")).toBe(true);
-    expect(location.pathname).toBe("/s/zzz");
   });
 });

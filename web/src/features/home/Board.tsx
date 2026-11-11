@@ -7,11 +7,9 @@ import type { Session } from "../../lib/types";
 import { navigate } from "../../router";
 import { me, token } from "../../stores/auth";
 import { conn } from "../../stores/events";
-import { kbToday } from "../../stores/kb";
+import { kbToday, openNote } from "../../stores/kb";
 import { roots } from "../../stores/roots";
 import { currentSection, sectionMatch, sessionSectionName, sessions } from "../../stores/sessions";
-
-declare const window: Window & { kbOpenPath?: (p: string) => void };
 
 interface UsageMeta { input: string; output: string; cache: string; turns: string; cost: string }
 const EMPTY: UsageMeta = { input: "尚未入账", output: "尚未入账", cache: "尚未入账", turns: "尚未入账", cost: "尚未入账" };
@@ -100,7 +98,7 @@ export function Board() {
           <div class="sec-h"><span class="n">03</span><span class="t">今日知识库</span><span class="c">{kb.length}</span></div>
           {kb.length
             ? kb.map((r) => (
-              <a key={r.path} class="dcard" onClick={() => window.kbOpenPath?.(r.path)}>
+              <a key={r.path} class="dcard" onClick={() => openNote(r.path)}>
                 <h4><Icon name="book" size={14} /><span class="t">{r.title || baseName(r.path || "")}</span></h4>
                 <div class="ft"><span>{r.type || r.note || "知识库"}</span><span>{typeof r.created === "number" ? hm(r.created) : ""}</span></div>
               </a>

@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 const CONFIG = { FORBID_TAGS: ["style"] };
 let linkify: ((text: string) => string) | null = null;
 
-/** 注册“[[笔记名]] → 可点开的知识库链接”的预处理（知识库迁完之前由桥接层接老代码的 kbLinkify） */
+/** 注册“[[笔记名]] → 可点开的知识库链接”的预处理（由 stores/kbsync.ts 接上 lib/wikilink 的 linkify） */
 export function setMarkdownLinkify(fn: ((text: string) => string) | null): void {
   linkify = fn;
 }

@@ -1,12 +1,12 @@
 // 管理后台：用户、所有人的聊天记录、技能库、待审核的技能。只有管理员能打开。
 "use strict";
-// ---------- 老弹层（后台、知识库）共用的几行 ----------
-// 原来在 app.js 里；app.js 整个删掉以后只剩这几行，kb.js 也用（admin.js 先加载，顶层作用域是共享的）。
+// ---------- 老弹层（后台）用的几行 ----------
+// 原来在 app.js 里；app.js 整个删掉以后只剩这几行。
 const $ = id => document.getElementById(id);
 document.querySelectorAll(".closebtn").forEach(b => b.innerHTML = icon("x"));
 document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest(".overlay").classList.remove("show"));
 document.querySelectorAll(".overlay").forEach(o => o.addEventListener("mousedown", e => {
-  if (e.target === o && o.id !== "kbBox") o.classList.remove("show");
+  if (e.target === o) o.classList.remove("show");
 }));
 
 (() => {

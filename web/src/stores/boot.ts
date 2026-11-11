@@ -9,7 +9,7 @@ import { resetFiles } from "./files";
 import { loadSections, resetSessions } from "./sessions";
 
 const enterHooks = new Set<(u: User) => void>();
-/** 进入应用时额外要做的事（老代码里：kbInit、首页用量），桥接层接上 */
+/** 进入应用时额外要做的事（取知识库数据，见 stores/kbsync.ts） */
 export function onEnter(fn: (u: User) => void): () => void {
   enterHooks.add(fn);
   return () => enterHooks.delete(fn);

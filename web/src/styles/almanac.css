@@ -18,12 +18,6 @@
 }
 body { background: var(--paper); overflow: hidden; }
 ::selection { background: var(--navy); color: var(--paper); }
-.kbsecs { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
-.kbsecs button {
-  padding: 3px 7px; border: 1px solid var(--line); font: 500 11px var(--f-serif-cn); color: var(--ink2);
-}
-.kbsecs button.on { background: var(--navy); border-color: var(--navy); color: var(--paper); }
-.ke-section { width: 100%; margin-top: 8px; border: 0; border-bottom: 1px solid var(--line2); background: transparent; padding: 6px 0; font: 500 13px var(--f-serif-cn); }
 .srow, .sess.srow {
   display: grid; grid-template-columns: 42px minmax(0,1fr); gap: 6px;
   padding: 7px 8px; border-left: 3px solid transparent; cursor: pointer; border-radius: 0;
@@ -42,7 +36,4 @@ body { background: var(--paper); overflow: hidden; }
 .sess:hover .x { opacity: 1; }
 .sub { margin: 10px 0 0; font: 500 14px/1.6 var(--f-serif-cn); color: var(--ink2); }
 .overlay .dialog { background: var(--paper3); border: 1px solid var(--ink); border-radius: 0; }
-@media (max-width: 720px) {
-  .kbsecs { order: 8; flex-basis: 100%; margin-left: 0; }
-  .kbq { order: 9; }
-}
+

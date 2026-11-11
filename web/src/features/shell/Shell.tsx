@@ -11,14 +11,13 @@ import { back, mainRoute, navigate, route } from "../../router";
 import { isAdmin, logout, me } from "../../stores/auth";
 import { current, deleteSession } from "../../stores/chat";
 import { resetComposer } from "../../stores/composer";
-import { kbCount } from "../../stores/kb";
+import { lastKbPath, kbCount } from "../../stores/kb";
 import {
   currentSection, groups, query, sections, selectSection, sectionName, todayCount,
 } from "../../stores/sessions";
 import { THEMES, confirmBox, cycleTheme, paletteOpen, theme, toast } from "../../stores/ui";
 import { loc } from "../../router";
 
-declare const window: Window & { openKB: (v?: string) => void };
 
 // ---------- 竖栏（手机上是顶栏） ----------
 export function Rail({ level2 }: { level2: boolean }) {
@@ -166,7 +165,7 @@ export function Sidebar() {
       <nav class="nav">
         <a class={home && r !== "files" ? "on" : ""} onClick={() => navigate("/", { force: true })}><Icon name="chat" size={18} />值班板</a>
         <a class={on("files")} onClick={() => navigate("/files")}><Icon name="folder" size={18} />文件库</a>
-        <a class={on("kb")} onClick={() => navigate("/kb")}><Icon name="book" size={18} />知识库{kb ? <span class="cnt">{kb}</span> : null}</a>
+        <a class={on("kb")} onClick={() => navigate(lastKbPath.value)}><Icon name="book" size={18} />知识库{kb ? <span class="cnt">{kb}</span> : null}</a>
         {isAdmin.value && <a class={on("admin")} onClick={() => navigate("/admin/users")}><Icon name="users" size={18} />管理后台</a>}
       </nav>
       <div class="side-list">

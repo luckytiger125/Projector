@@ -31,6 +31,8 @@ export interface SheetProps {
   onBack?: () => void;
   /** 手机上正在看第二级（预览、正文）：内容区里只显示 .pane.preview */
   detail?: boolean;
+  /** 点遮罩不关闭（知识库：编辑中不小心点到外面会丢字，老代码也是这样） */
+  keepOnBackdrop?: boolean;
   /** 给 .sheet 加的 class（比如 files、kb） */
   class?: string;
   children: ComponentChildren;
@@ -49,7 +51,7 @@ export function SheetTabs({ tabs }: { tabs: SheetTab[] }) {
 export function Sheet(p: SheetProps) {
   const hasBar = !!(p.tabs && p.tabs.length) || !!p.search;
   return (
-    <div class="veil" onMouseDown={(e) => { if (e.target === e.currentTarget) p.onClose(); }}>
+    <div class="veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !p.keepOnBackdrop) p.onClose(); }}>
       <section class={"sheet" + (p.detail ? " m-detail" : "") + (p.class ? " " + p.class : "")} role="dialog" aria-modal="true" aria-label={typeof p.title === "string" ? p.title : p.kicker}>
         <header class="sheet-head">
           <button class="icon-btn m-back" type="button" title="返回" aria-label="返回" onClick={() => (p.onBack || p.onClose)()}><Icon name="chevL" size={20} /></button>

@@ -12,10 +12,10 @@ import {
   liveText, liveThinking, liveTools, loadOlder, loading, messages, olderState, queued, seen, thinkOpen,
 } from "../../stores/chat";
 import { showFiles } from "../../stores/files";
+import { distill as distillNow } from "../kb/actions";
 import { roots } from "../../stores/roots";
 import { toast } from "../../stores/ui";
 
-declare const window: Window & { kbDistill: () => void };
 
 // ---------- 滚动：贴底跟随、加载更早时保持位置 ----------
 let box: HTMLElement | null = null;
@@ -135,7 +135,7 @@ const Entry = memo(function Entry({ m, distill }: { m: Message; distill: boolean
             {info ? <span>{info}</span> : null}
             {distill && (
               <button class="btn ghost sm" disabled={busy} title="Claude 会把这次的做法整理成一条经验笔记，存进团队知识库"
-                onClick={() => { setBusy(true); window.kbDistill(); }}>
+                onClick={() => { setBusy(true); void distillNow(); }}>
                 <Icon name="book" size={14} />沉淀成经验
               </button>
             )}

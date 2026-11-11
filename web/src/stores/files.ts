@@ -13,6 +13,7 @@ import { loadDocx, loadXlsx } from "../lib/vendor";
 import type { Route } from "../router";
 import { navigate, replace, route } from "../router";
 import { me } from "./auth";
+import { relOfKbPath } from "../lib/wikilink";
 import { kbData } from "./kb";
 import { office, roots } from "./roots";
 
@@ -48,14 +49,8 @@ export function filesRoute(path?: string | null): Route {
 
 export const fileUrl = (p: string, extra = ""): string => `/api/files/${extra || "raw"}?path=${encodeURIComponent(p)}`;
 
-/** 知识库根目录下的 .md 文件 → 相对路径；否则 null（和老代码 kbRelOf 一致） */
-export function kbRelOf(root: string | undefined, abs: string | undefined): string | null {
-  const r0 = (root || "").replace(/[\\/]+$/, "");
-  if (!r0 || !abs) return null;
-  const a = abs.replaceAll("\\", "/"), r = r0.replaceAll("\\", "/");
-  if (!a.toLowerCase().startsWith(r.toLowerCase() + "/") || !/\.md$/i.test(a)) return null;
-  return a.slice(r.length + 1);
-}
+/** 知识库根目录下的 .md 文件 → 相对路径；否则 null（规则在 lib/wikilink.ts） */
+export const kbRelOf = relOfKbPath;
 
 // ---------- 状态 ----------
 export const mode = signal<FileMode>("browse");

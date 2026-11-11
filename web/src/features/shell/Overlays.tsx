@@ -1,4 +1,5 @@
 // 盖在最上面的几层：通用对话框、提示条、命令面板。
+import { lastKbPath } from "../../stores/kb";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { rel } from "../../lib/format";
@@ -11,12 +12,11 @@ import { showFiles } from "../../stores/files";
 import { openLocalDialog } from "../files/local";
 import { changePassword, pickAvatar } from "../account/dialogs";
 import { sessions } from "../../stores/sessions";
+import { distill } from "../kb/actions";
 import {
   cycleTheme, dialog, dismissDialog, closeDialog, paletteOpen, theme, toast, toasts, THEMES,
 } from "../../stores/ui";
 import type { DialogButton } from "../../stores/ui";
-
-declare const window: Window & { kbDistill: () => void };
 
 // ---------- 通用对话框 ----------
 function DialogButtonEl({ b, value, busy, setBusy }: { b: DialogButton; value: () => string; busy: boolean; setBusy: (v: boolean) => void }) {
@@ -105,7 +105,7 @@ function paletteActions(): Array<[string, string, string, () => void]> {
   const acts: Array<[string, string, string, () => void]> = [
     ["plus", "新会话", "", () => { resetComposer(); navigate("/s/new"); }],
     ["folder", "打开文件库", "", () => navigate("/files")],
-    ["book", "打开知识库", "", () => navigate("/kb")],
+    ["book", "打开知识库", "", () => navigate(lastKbPath.value)],
     ["clip", "引用文件到对话", "@", () => showFiles()],
     ["laptop", "把本机文件交给 Claude", "", () => openLocalDialog()],
     ["puzzle", "选择技能", "", () => { skillPopRequest.value++; }],
@@ -119,7 +119,7 @@ function paletteActions(): Array<[string, string, string, () => void]> {
   if (isAdmin.value) acts.push(["shield", "打开管理后台", "", () => navigate("/admin/users")]);
   const id = current.value;
   if (id) acts.splice(1, 0, ["steps", "查看完整过程", "", () => navigate(`/s/${id}/steps`)]);
-  if (id && isMine.value && currentSess.value?.claude_session) acts.splice(2, 0, ["book", "沉淀经验：把这次对话存进知识库", "", () => window.kbDistill()]);
+  if (id && isMine.value && currentSess.value?.claude_session) acts.splice(2, 0, ["book", "沉淀经验：把这次对话存进知识库", "", () => void distill()]);
   return acts;
 }
 

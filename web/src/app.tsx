@@ -7,6 +7,7 @@ import { Chat } from "./features/chat/Chat";
 import { StepsPage } from "./features/chat/StepsPage";
 import { FilesHost } from "./features/files/Host";
 import { FilesSheet } from "./features/files/Files";
+import { KbSheet } from "./features/kb/Kb";
 import { Board } from "./features/home/Board";
 import { SkillsSheet } from "./features/skills/Skills";
 import { DialogHost, Palette, Toasts } from "./features/shell/Overlays";
@@ -15,9 +16,7 @@ import { closeOverlay, mainRoute, overlayRoute, route } from "./router";
 import { loginVisible, me } from "./stores/auth";
 import { dialog, dismissDialog, paletteOpen } from "./stores/ui";
 
-declare const window: Window & { kbBeforeClose?: () => boolean };
-
-/** 全局快捷键：Ctrl/⌘+K 命令面板；Esc 按层关闭（命令面板、对话框、文件库和步骤记录页、老弹层） */
+/** 全局快捷键：Ctrl/⌘+K 命令面板；Esc 按层关闭（命令面板、对话框、各个弹层页、管理后台） */
 function useGlobalKeys() {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -30,14 +29,11 @@ function useGlobalKeys() {
       if (e.key !== "Escape") return;
       if (paletteOpen.value) { paletteOpen.value = false; return; }
       if (dialog.value) { dismissDialog(); return; }
-      for (const id of ["kbBox", "adminBox"]) {
-        const box = document.getElementById(id);
-        if (!box || !box.classList.contains("show")) continue;
-        if (id === "kbBox") window.kbBeforeClose?.(); else box.classList.remove("show");
-        return;
-      }
+      const box = document.getElementById("adminBox");
+      if (box && box.classList.contains("show")) { box.classList.remove("show"); return; }
       const o = overlayRoute.value?.name;
-      if (o === "steps" || o === "files" || o === "skills" || o === "usage" || o === "mobile") closeOverlay();
+      // 知识库里有没保存的编辑时，关闭由离开守卫先问一句
+      if (o === "steps" || o === "files" || o === "kb" || o === "skills" || o === "usage" || o === "mobile") closeOverlay();
     };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
@@ -60,6 +56,7 @@ export function App() {
       </div>
       {u && <StepsPage />}
       {u && <FilesSheet />}
+      {u && <KbSheet />}
       {u && <SkillsSheet />}
       {u && <UsageSheet />}
       {u && <MobileSheet />}
