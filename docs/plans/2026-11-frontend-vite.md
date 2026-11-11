@@ -38,7 +38,7 @@
 
 版本（写计划时 npm 上的最新版，锁在 `package-lock.json`）：vite 8、typescript 7、preact 11、@preact/signals 2、@preact/preset-vite 2。
 
-第三方库改从 npm 装，版本钉在现在 `static/vendor/` 用的那一版，避免行为变化：marked 12.0.2、dompurify 3.1.6、jszip 3.10.1、docx-preview 0.3.5、xlsx 0.18.5、qrcode-generator 1.4.4。docx-preview、xlsx、jszip、qrcode 只在预览或扫码时才用，改成动态 `import()`，单独分包，不进首屏。
+第三方库改从 npm 装，版本钉在现在 `static/vendor/` 用的那一版，避免行为变化：marked 12.0.2、jszip 3.10.1、docx-preview 0.3.5、qrcode-generator 1.4.4。两个例外因为旧版有已知漏洞而升级：dompurify 3.4.17（3.1.6 有 CVE-2025-26791）、xlsx 0.20.3（0.18.5 有 CVE-2023-30533、CVE-2024-22363；npm 上没有修复版，从 `cdn.sheetjs.com` 的 tarball 装）。docx-preview、xlsx、jszip、qrcode 只在预览或扫码时才用，改成动态 `import()`，单独分包，不进首屏。
 
 ## 2. 目录结构
 
