@@ -18,7 +18,9 @@
 
 问题：全部状态是 `app.js` 顶层的几十个 `let`，四个脚本靠全局变量互相调用；界面靠拼 HTML 字符串整块重画；弹窗没有网址，刷新就丢；手机端只是把桌面布局挤窄。
 
-目标：换成 Vite 工程、拆成组件、状态集中管理、主要弹窗有网址、手机端有专门布局。**功能、外观、界面文字都不变**，可见的变化只有两处：弹窗有了网址，手机端有专门布局。
+目标：换成 Vite 工程、拆成组件、状态集中管理、主要弹窗有网址、手机端有专门布局，**并借组件化把界面精修一遍**。
+
+> **2026-11-11 修订（用户确认）**：最初的要求是“外观保持不变”。用户改了这一条：要的是美观度，不是把旧界面原样搬过来。确认的方向是**保留“年鉴”风格，精修**——纸面底色、深蓝侧栏、衬线标题这套气质留着，但间距、层级、卡片、输入区、弹窗、动效、手机端都按组件重新设计，不照搬旧样式。对话区、首页和侧栏、弹窗类页面、手机端四处都要做。**功能和界面文字仍然不变。** 设计怎么做见第 6 节，阶段安排见第 8 节。
 
 硬约束：目标台式机只有 Python；运行时不连外网；后端接口和事件格式不动；`server.py` 只改首页、静态挂载和前端路由回退。
 
@@ -30,7 +32,7 @@
 
 - **体积小。** Preact 加 signals 压缩后约 6 KB（gzip），这个应用是内网工具，产物还要提交进仓库，越小越好。
 - **流式输出天然不整页重绘。** signals 是细粒度订阅：`live.text` 变了，只有读它的那个组件重画。现在 `app.js` 为了做到这一点手写了 `scheduleLive` 和“只更新 live 节点”的逻辑，换成 signals 后这是默认行为。
-- **能一块一块迁。** Preact 组件可以挂到页面上任意一个现有节点里，所以老代码和新组件能在同一个页面里共存，每个阶段结束应用都完整可用（见第 7 节的桥接办法）。
+- **能一块一块迁。** Preact 组件可以挂到页面上任意一个现有节点里，所以老代码和新组件能在同一个页面里共存，每个阶段结束应用都完整可用（见第 8 节的桥接办法）。
 - **规模合适。** 全部前端约 3500 行脚本、十来个界面，用不着更重的框架和状态库。
 - **TypeScript**：后端事件和接口返回的字段很多（会话、消息、确认、提问、文件条目），有类型后改动时能被检查出来；CI 里的 `node --check` 也就能换成真正的类型检查。
 
@@ -70,9 +72,9 @@ web/                      前端源码（只有开发和 CI 需要 Node）
       account/            头像、密码、用量、手机扫码
       palette/            命令面板
     styles/
-      base.css            原 index.html 的内联样式，原样搬来
-      almanac.css         原 almanac.css，原样搬来
-      mobile.css          手机端布局（阶段七新增）
+      tokens.css          设计变量：颜色、字号、间距、圆角、阴影、动效（阶段二新增）
+      base.css            过渡期：原 index.html 的内联样式，迁一块删一块
+      almanac.css         过渡期：原 almanac.css，迁一块删一块
     legacy/               过渡期：老脚本原样放这里，迁完一块删一块，阶段六清空
 static/
   app/                    构建产物（提交进仓库，见第 5 节）
@@ -81,7 +83,7 @@ static/
   icon-192.png icon-512.png …   其余静态文件不动
 ```
 
-样式不改写成 CSS-in-JS 或 CSS Modules：两份样式原样搬进 `styles/`，组件继续用原来的 class 和 id。这样外观不可能走样，也不用逐条核对一千行 CSS。
+样式用普通 CSS，不用 CSS-in-JS。阶段一先把两份旧样式原样搬进 `styles/`（保证脚手架阶段界面不变）；之后每迁一块界面，就按第 6 节的设计**重写这一块的样式**，放在组件旁边（`features/chat/chat.css` 这样），用 `styles/tokens.css` 里的设计变量，同时从旧样式里删掉对应的规则。迁完后 `base.css` 和 `almanac.css` 不再存在。
 
 ## 3. 状态管理
 
@@ -171,7 +173,39 @@ Vite 配置要点：`base: "/static/app/"`，`build.outDir: "../static/app"`，`
 
 桌面壳（`desktop/`）不用改：它把窗口导航到服务端地址，注入的 `window.__TAURI__` 照旧可用；托盘的“刷新”是 `location.reload()`，有了网址后刷新会留在当前页面，比现在更好。
 
-## 6. 手机端布局
+## 6. 界面精修
+
+方向：**还是那本“年鉴”，但排得更讲究。** 不换配色体系，不换气质，不加花哨的东西；靠排版、留白、层级和细节把它做精致。字体只用系统自带的（运行时不连外网）：标题用宋体类衬线（Songti SC / Noto Serif CJK / SimSun），正文用系统黑体，数字和路径用等宽。
+
+### 设计基础（`styles/tokens.css`）
+
+旧样式里颜色、字号、间距是各处手写的数值，同一种东西有好几种写法。先定一套变量，所有组件只用变量：
+
+- **颜色**：纸面（三级：底、卡片、凹陷）、墨色（四级：标题、正文、次要、禁用）、藏青（侧栏和主按钮）、朱红（唯一的强调色：待确认、未读、印章）、三种状态色（运行、成功、出错，都压低饱和度配纸面）。正文和次要文字对纸面的对比度不低于 4.5:1。
+- **字号**：一条比例尺（12 / 13 / 14 / 16 / 20 / 28 / 40），标题衬线、正文无衬线；正文行高 1.7，中文阅读舒服。
+- **间距**：4px 网格（4 / 8 / 12 / 16 / 24 / 32 / 48）。
+- **线和圆角**：年鉴的味道主要来自细线和方正——分隔用 1px 发丝线和双线刊头，圆角统一 2–4px，不用大圆角；阴影只给浮起来的东西（弹层、输入区、菜单），一档浅一档深。
+- **动效**：150ms（悬停、按下）和 220ms（弹层、展开）两档，同一条缓动曲线；`prefers-reduced-motion` 时全部关掉。
+- **焦点**：所有可操作元素有清楚的键盘焦点环；可点的东西不小于 40px（手机 44px）。
+
+### 各处怎么改
+
+| 地方 | 现在的问题 | 精修后 |
+|---|---|---|
+| **对话区** | 正文横向铺满，长行难读；用户和 Claude 的条目区分弱；思考块、工具步骤、正文挤在一起；确认卡片像普通消息 | 正文限宽（约 72 个字符）居中成一栏，左侧留一条窄的“页边”放时间和角色；用户的话是带引线的短条目，Claude 的回复是正文；思考块和工具步骤做成页边上的一条细时间线，安静、可折叠；代码块和表格有自己的版式；确认卡片做成“签批单”——朱红标头、操作内容等宽展示、允许是主按钮；提问面板是从输入区上沿展开的一张纸，选项大而清楚、带数字键提示。 |
+| **输入区** | 平贴在底部，按钮零散 | 一张浮起的纸：聚焦时描边加深；引用和技能标签在输入框上沿排成一行；左边是附加类按钮（引用、本机、技能），右边是发送 / 停止，主次分明；下方一行小字状态。 |
+| **值班板** | 信息都在，但刊头、信息表、三栏之间节奏平 | 刊头放大并加双线；当班信息表做成年鉴的“表头栏”，数字等宽右对齐；三栏有编号小标签和清楚的空状态；待处理一栏有事时用朱红提示。 |
+| **侧栏和会话列表** | 行距紧，状态靠小标签，选中态弱 | 分组标题是小号字距拉开的刊眉；每行时间等宽左对齐、标题单行截断、状态用小圆点 + 文字；悬停和选中有明确的底色和左侧墨线；搜索、分区、新建三件事的层级理顺；用户卡片和菜单重排。 |
+| **弹层（文件、知识库、后台、技能、用量）** | 各自一套头部、页签、表格样式 | 统一的弹层骨架：标题栏（标题 + 页签 + 关闭）、工具条、内容区、底栏；统一的列表行、表格、表单、空状态、加载状态；文件面板的列表和预览左右分栏比例固定，预览区有文件信息头；知识库笔记按文章版式排；后台表格行高、对齐、操作按钮统一。 |
+| **对话框和提示** | 样式朴素 | 统一尺寸档位（小 / 中 / 宽）、标题、正文、按钮区（主按钮在右）；危险操作的主按钮用朱红；提示条从右上角滑入，分信息 / 成功 / 出错三种。 |
+| **登录页** | 已经有年鉴感 | 保留左右分栏，细调字距、输入框和按钮状态；手机上改成上下排。 |
+| **手机端** | 桌面布局挤窄 | 见第 7 节，和每个组件的桌面样式一起设计，不是最后再补。 |
+
+### 先出样稿再动手
+
+好不好看是主观的，所以在大面积实现之前先做一份**静态样稿**（`docs/design/` 下的几个 HTML，直接用 `tokens.css`）：对话（含思考块、工具步骤、确认卡片、提问面板、输入区）、值班板 + 侧栏、文件面板、知识库笔记、一个后台页签、对话框，各一屏桌面版和一屏 380px 手机版。**用户看过同意后**再进入各组件阶段；样稿里定下的样式就是各阶段实现的依据，样稿的 CSS 直接成为组件样式的起点。
+
+## 7. 手机端布局
 
 断点沿用现有的 **720px**（现有 CSS 已经在这个宽度切换），以 380px 宽为验收基准。不新增断点。原则：**一屏只做一件事，分级导航，后退键回上一级。**
 
@@ -190,7 +224,7 @@ Vite 配置要点：`base: "/static/app/"`，`build.outDir: "../static/app"`，`
 
 统一要求：`html, body` 不出现横向滚动条；可点的东西不小于 40px；键盘弹出时输入区不被遮住（用 `dvh` 而不是 `vh`）。
 
-## 7. 分阶段
+## 8. 分阶段
 
 ### 过渡办法：老代码和新组件共存
 
@@ -202,7 +236,7 @@ Vite 配置要点：`base: "/static/app/"`，`build.outDir: "../static/app"`，`
 2. 从 legacy 里删掉对应的代码和骨架；
 3. legacy 里剩下的代码如果还要用被迁走的变量或函数（比如 `kb.js` 用 `api`、`dialog`、`current`），由 `legacy/bridge.ts` 在 `window` 上定义同名的访问器，背后读写 store。老代码不用改就能继续跑。
 
-element 的 id 和 class 全程不变，CSS 和老代码里的 `$("id")` 都继续有效。阶段六迁完最后一块后，`legacy/` 和 `bridge.ts` 一起删掉。
+老代码还在用的 element id 保持不变，它的 `$("id")` 继续有效；已经迁成组件的部分用新的 class 和新样式。阶段六迁完最后一块后，`legacy/` 和 `bridge.ts` 一起删掉。
 
 ### 阶段
 
@@ -210,18 +244,19 @@ element 的 id 和 class 全程不变，CSS 和老代码里的 `$("id")` 都继�
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| **一 脚手架** | 建 `web/` 工程；老脚本搬进 `legacy/`，样式搬进 `styles/`；第三方库改 npm 引入（预览类动态加载）；产物进 `static/app/`；`server.py` 改首页路径并加路由回退（+ 测试）；删 `static/*.js`、`static/vendor/`、`static/almanac.css`、`static/index.html`；CI 的 `node --check` 换成类型检查 + 构建 + 产物一致性检查；`.gitignore`、`.gitattributes`。 | 界面和迁移前逐像素一样；对照表全部功能可用；干净检出不装 Node 能启动。 |
-| **二 核心** | `lib/`、`stores/`（auth、sessions、chat、events、composer、ui）、`router.ts`、bridge；组件：登录、左栏、会话列表和分区、值班板、对话（消息、live、思考块、工具步骤、确认卡片、提问面板、分页）、输入区、标题栏、步骤记录、提示条、通用对话框。路由 `/`、`/s/new`、`/s/{id}`、`/s/{id}/steps`。 | 对照表 1–24 项；流式期间只有 live 条目在更新（用 Performance 面板或 MutationObserver 验证）；500 条消息的会话打开和滚动顺畅；`/s/{id}` 直接打开、刷新、前进后退正确；未登录打开深层网址登录后留在那里。 |
-| **三 文件** | 文件面板（我的文件 / 公共文件库、搜索、各类型预览、选择模式）、回收站、公共库管理和上传确认、上传和拖拽、本机文件夹同步、`@` 引用。路由 `/files`、`/files/trash`。 | 对照表 25–34 项；`/files?path=…` 直接打开定位正确。 |
-| **四 技能和账户** | 技能（列表、详情、提交、回滚、选择浮层）、头像、密码、用量、手机扫码、命令面板、用户菜单。路由 `/skills`、`/usage`、`/mobile`。 | 对照表 35–41 项。 |
-| **五 知识库** | 首页、笔记（阅读、编辑、历史、反向链接）、图谱（画布绘制代码保持命令式，包在组件里）、分区筛选、搜索、沉淀经验、整理进知识库、文件卡片提示。路由 `/kb…`。 | 对照表 42–46 项；未保存时后退有确认。 |
-| **六 后台和收尾** | 管理后台八个页签；删除 `legacy/`、bridge、`index.html` 里剩余骨架。路由 `/admin/{tab}`。 | 对照表 47–54 项；`legacy/` 不存在；`grep` 不到 `window.` 上的桥接。 |
-| **七 手机端** | `mobile.css` 和少量组件分支：两级导航、各弹层全屏化、输入区和卡片适配。 | 380px 下逐项过第 6 节的表；无横向滚动。 |
-| **八 文档和总验收** | README（开发、构建、台式机不需要 Node）；CI 和发布工作流定稿；桌面宽度和 380px 把对照表从头到尾再过一遍。 | 完成标准全部满足。 |
+| **一 脚手架** | 建 `web/` 工程；老脚本搬进 `legacy/`，样式搬进 `styles/`；第三方库改 npm 引入（预览类动态加载）；产物进 `static/app/`；`server.py` 改首页路径并加路由回退（+ 测试）；删 `static/*.js`、`static/vendor/`、`static/almanac.css`、`static/index.html`；CI 的 `node --check` 换成类型检查 + 构建 + 产物一致性检查；`.gitignore`、`.gitattributes`。 | 界面和迁移前一样（这一阶段还不改样式）；对照表全部功能可用；干净检出不装 Node 能启动。 |
+| **二 设计基础和样稿** | `styles/tokens.css`；`docs/design/` 静态样稿（第 6 节列的各屏，桌面 + 380px）。不动应用本身。 | **用户看过样稿并同意。** |
+| **三 核心** | 按样稿重写这部分样式。`lib/`、`stores/`（auth、sessions、chat、events、composer、ui）、`router.ts`、bridge；组件：登录、左栏、会话列表和分区、值班板、对话（消息、live、思考块、工具步骤、确认卡片、提问面板、分页）、输入区、标题栏、步骤记录、提示条、通用对话框。路由 `/`、`/s/new`、`/s/{id}`、`/s/{id}/steps`。 | 对照表 1–24 项；流式期间只有 live 条目在更新（用 Performance 面板或 MutationObserver 验证）；500 条消息的会话打开和滚动顺畅；`/s/{id}` 直接打开、刷新、前进后退正确；未登录打开深层网址登录后留在那里。 |
+| **四 文件** | 按样稿重写样式。 文件面板（我的文件 / 公共文件库、搜索、各类型预览、选择模式）、回收站、公共库管理和上传确认、上传和拖拽、本机文件夹同步、`@` 引用。路由 `/files`、`/files/trash`。 | 对照表 25–34 项；`/files?path=…` 直接打开定位正确。 |
+| **五 技能和账户** | 按样稿重写样式。 技能（列表、详情、提交、回滚、选择浮层）、头像、密码、用量、手机扫码、命令面板、用户菜单。路由 `/skills`、`/usage`、`/mobile`。 | 对照表 35–41 项。 |
+| **六 知识库** | 按样稿重写样式。 首页、笔记（阅读、编辑、历史、反向链接）、图谱（画布绘制代码保持命令式，包在组件里）、分区筛选、搜索、沉淀经验、整理进知识库、文件卡片提示。路由 `/kb…`。 | 对照表 42–46 项；未保存时后退有确认。 |
+| **七 后台和收尾** | 按样稿重写样式；删除 `base.css`、`almanac.css` 里剩余的旧规则。 管理后台八个页签；删除 `legacy/`、bridge、`index.html` 里剩余骨架。路由 `/admin/{tab}`。 | 对照表 47–54 项；`legacy/` 不存在；`grep` 不到 `window.` 上的桥接。 |
+| **八 手机端总验收** | 手机样式随各阶段一起做；这一阶段补齐两级导航等跨组件的部分，并在 380px 下整体走查、修齐。 | 380px 下逐项过第 7 节的表；无横向滚动。 |
+| **九 文档和总验收** | README（开发、构建、台式机不需要 Node）；CI 和发布工作流定稿；桌面宽度和 380px 把对照表从头到尾再过一遍。 | 完成标准全部满足。 |
 
-阶段二到六都会动 `app.tsx`、bridge 和 `index.html`，所以**串行**做。
+每个组件阶段除功能验收外，还要对着样稿逐屏核对（桌面和 380px 截图）。阶段三到七都会动 `app.tsx`、bridge 和 `index.html`，所以**串行**做。
 
-## 8. 现有功能对照表
+## 9. 现有功能对照表
 
 迁移的验收清单。“现在”指迁移前的实现位置。
 
@@ -229,95 +264,95 @@ element 的 id 和 class 全程不变，CSS 和老代码里的 `$("id")` 都继�
 
 | # | 功能 | 现在 | 迁到 | 阶段 |
 |---|---|---|---|---|
-| 1 | 登录；首次打开创建管理员（`/api/setup`） | app.js `showLogin` | `features/login` | 二 |
-| 2 | 启动：种 cookie、`/api/me`、登录失效（401）回登录页 | app.js 末尾、`api()` | `main.tsx`、`lib/api.ts` | 二 |
-| 3 | 左侧窄栏、会话列表（今天 / 昨天 / 7 天内 / 更早）、状态点、未读 | `renderSessions` | `features/shell` | 二 |
-| 4 | 会话搜索框、今日计数 | 同上 | 同上 | 二 |
-| 5 | 分区：切换、筛选、给会话改分区 | sections 相关 | `features/shell`、`stores/sessions` | 二 |
-| 6 | 值班板：刊头、当班信息表、用量数字、待处理 / 今日 / 知识库三栏 | `renderHome` | `features/home` | 二 |
-| 7 | 用户卡片和菜单（头像、技能、用量、手机、后台、主题、密码、退出） | user menu | `features/shell` | 二（入口）/ 四 |
-| 8 | 主题切换（三种模式都保持纸面配色） | ui.js `applyTheme` | `stores/ui` | 二 |
+| 1 | 登录；首次打开创建管理员（`/api/setup`） | app.js `showLogin` | `features/login` | 三 |
+| 2 | 启动：种 cookie、`/api/me`、登录失效（401）回登录页 | app.js 末尾、`api()` | `main.tsx`、`lib/api.ts` | 三 |
+| 3 | 左侧窄栏、会话列表（今天 / 昨天 / 7 天内 / 更早）、状态点、未读 | `renderSessions` | `features/shell` | 三 |
+| 4 | 会话搜索框、今日计数 | 同上 | 同上 | 三 |
+| 5 | 分区：切换、筛选、给会话改分区 | sections 相关 | `features/shell`、`stores/sessions` | 三 |
+| 6 | 值班板：刊头、当班信息表、用量数字、待处理 / 今日 / 知识库三栏 | `renderHome` | `features/home` | 三 |
+| 7 | 用户卡片和菜单（头像、技能、用量、手机、后台、主题、密码、退出） | user menu | `features/shell` | 三（入口）/ 五 |
+| 8 | 主题切换（三种模式都保持纸面配色） | ui.js `applyTheme` | `stores/ui` | 三 |
 
 ### 对话
 
 | # | 功能 | 现在 | 迁到 | 阶段 |
 |---|---|---|---|---|
-| 9 | 新建会话（发第一条时才创建）、打开会话 | `ensureSession`、`openSession` | `stores/chat` | 二 |
-| 10 | 改名（双击标题）、删除 | title dblclick、delete | `features/chat/Header` | 二 |
-| 11 | 发送（Enter 发送、Shift+Enter 换行、输入法组字时不发） | `send` | `features/chat/Composer` | 二 |
-| 12 | 排队（运行中再发进队列）和取消排队 | `queued`、queue cancel | 同上 | 二 |
-| 13 | 停止 | stopBtn | 同上 | 二 |
-| 14 | 逐字输出，Markdown 渲染（净化），代码块 | `renderLive`、`md` | `features/chat/LiveEntry`、`lib/md.ts` | 二 |
-| 15 | “思考中”块：展开 / 收起，流式更新 | think block | `features/chat/Thinking` | 二 |
-| 16 | 工具步骤：图标、说明、路径缩写；路径可点开文件 | `TOOL_META`、`linkifyPaths` | `features/chat/Steps` | 二 |
-| 17 | 步骤记录弹层（完整 transcript） | `showSteps` | `features/chat/StepsPanel` | 二 |
-| 18 | 确认卡片：详情、允许 / 拒绝、处理后的状态 | `approvalDetail` | `features/chat/Approval` | 二 |
-| 19 | Claude 提问面板：单选 / 多选 / 自填，数字键 1–9 选、Enter 提交 | `renderAsk`、`submitAsk` | `features/chat/AskDock` | 二 |
-| 20 | 消息分页：加载更早，保持滚动位置 | `loadOlder` | `features/chat/MessageList` | 二 |
-| 21 | 标题栏：分区、状态、条数、权限标签、所有者、跳过确认开关、连接状态 | `renderTop` | `features/chat/Header` | 二 |
-| 22 | 别人的会话只读提示条 | otherBanner | 同上 | 二 |
-| 23 | 通知（网页通知 / 桌面壳通知）：需要确认、有提问、回复完成 | `notify` | `lib/notify.ts` | 二 |
-| 24 | 断线重连、`Last-Event-ID` 补发、`resync` 整体重载、连接状态显示 | `connect` | `stores/events` | 二 |
+| 9 | 新建会话（发第一条时才创建）、打开会话 | `ensureSession`、`openSession` | `stores/chat` | 三 |
+| 10 | 改名（双击标题）、删除 | title dblclick、delete | `features/chat/Header` | 三 |
+| 11 | 发送（Enter 发送、Shift+Enter 换行、输入法组字时不发） | `send` | `features/chat/Composer` | 三 |
+| 12 | 排队（运行中再发进队列）和取消排队 | `queued`、queue cancel | 同上 | 三 |
+| 13 | 停止 | stopBtn | 同上 | 三 |
+| 14 | 逐字输出，Markdown 渲染（净化），代码块 | `renderLive`、`md` | `features/chat/LiveEntry`、`lib/md.ts` | 三 |
+| 15 | “思考中”块：展开 / 收起，流式更新 | think block | `features/chat/Thinking` | 三 |
+| 16 | 工具步骤：图标、说明、路径缩写；路径可点开文件 | `TOOL_META`、`linkifyPaths` | `features/chat/Steps` | 三 |
+| 17 | 步骤记录弹层（完整 transcript） | `showSteps` | `features/chat/StepsPanel` | 三 |
+| 18 | 确认卡片：详情、允许 / 拒绝、处理后的状态 | `approvalDetail` | `features/chat/Approval` | 三 |
+| 19 | Claude 提问面板：单选 / 多选 / 自填，数字键 1–9 选、Enter 提交 | `renderAsk`、`submitAsk` | `features/chat/AskDock` | 三 |
+| 20 | 消息分页：加载更早，保持滚动位置 | `loadOlder` | `features/chat/MessageList` | 三 |
+| 21 | 标题栏：分区、状态、条数、权限标签、所有者、跳过确认开关、连接状态 | `renderTop` | `features/chat/Header` | 三 |
+| 22 | 别人的会话只读提示条 | otherBanner | 同上 | 三 |
+| 23 | 通知（网页通知 / 桌面壳通知）：需要确认、有提问、回复完成 | `notify` | `lib/notify.ts` | 三 |
+| 24 | 断线重连、`Last-Event-ID` 补发、`resync` 整体重载、连接状态显示 | `connect` | `stores/events` | 三 |
 
 ### 文件
 
 | # | 功能 | 现在 | 迁到 | 阶段 |
 |---|---|---|---|---|
-| 25 | 文件面板：我的文件 / 公共文件库切换、面包屑、目录浏览 | `showFiles`、`openDir` | `features/files` | 三 |
-| 26 | 文件搜索（防抖 350ms） | 同上 | 同上 | 三 |
-| 27 | 预览：文本 / 代码、Markdown、图片、PDF、docx、xlsx、office 转 PDF、音视频、不支持的类型给下载 | `preview` | `features/files/Preview` | 三 |
-| 28 | 引用文件到输入区（面板里选、`@` 触发）、引用标签、移除 | `addRef`、chips | `features/files`、`Composer` | 三 |
-| 29 | 选工作目录模式 | `showFiles(path,"workdir")` | 同上 | 三 |
-| 30 | 上传（按钮、整个文件夹）、进度、2 GB 上限 | `uploadFiles` | `features/files/upload.ts` | 三 |
-| 31 | 拖拽上传：拖到对话 / 拖到文件面板的公共库 | window drag-drop | 同上 | 三 |
-| 32 | 公共库：新建文件夹、重命名、删除、上传前确认（可勾“不再提示”）、重名处理 | `confirmLibUpload`、`askConflict` | `features/files/library.ts` | 三 |
-| 33 | 回收站：列表、原位置、还原、彻底删除 | `openTrash` | `features/files/Trash` | 三 |
-| 34 | 本机文件夹同步（桌面壳）：添加、链接条、同步回本机 | `addLocalFolder`、`renderLinks`、`syncBack` | `features/files/links.ts` | 三 |
+| 25 | 文件面板：我的文件 / 公共文件库切换、面包屑、目录浏览 | `showFiles`、`openDir` | `features/files` | 四 |
+| 26 | 文件搜索（防抖 350ms） | 同上 | 同上 | 四 |
+| 27 | 预览：文本 / 代码、Markdown、图片、PDF、docx、xlsx、office 转 PDF、音视频、不支持的类型给下载 | `preview` | `features/files/Preview` | 四 |
+| 28 | 引用文件到输入区（面板里选、`@` 触发）、引用标签、移除 | `addRef`、chips | `features/files`、`Composer` | 四 |
+| 29 | 选工作目录模式 | `showFiles(path,"workdir")` | 同上 | 四 |
+| 30 | 上传（按钮、整个文件夹）、进度、2 GB 上限 | `uploadFiles` | `features/files/upload.ts` | 四 |
+| 31 | 拖拽上传：拖到对话 / 拖到文件面板的公共库 | window drag-drop | 同上 | 四 |
+| 32 | 公共库：新建文件夹、重命名、删除、上传前确认（可勾“不再提示”）、重名处理 | `confirmLibUpload`、`askConflict` | `features/files/library.ts` | 四 |
+| 33 | 回收站：列表、原位置、还原、彻底删除 | `openTrash` | `features/files/Trash` | 四 |
+| 34 | 本机文件夹同步（桌面壳）：添加、链接条、同步回本机 | `addLocalFolder`、`renderLinks`、`syncBack` | `features/files/links.ts` | 四 |
 
 ### 技能和账户
 
 | # | 功能 | 现在 | 迁到 | 阶段 |
 |---|---|---|---|---|
-| 35 | 输入区选技能（浮层）、技能标签 | skillPop | `features/skills/SkillPop` | 四 |
-| 36 | 我的技能：列表、详情（文件查看）、提交审核、回滚 | `openMySkills` 等 | `features/skills` | 四 |
-| 37 | 换头像（16 个水果） | avatar dialog | `features/account` | 四 |
-| 38 | 改密码 | pwd dialog | 同上 | 四 |
-| 39 | 我的用量：汇总、最近 20 轮 | usage | 同上 | 四 |
-| 40 | 手机扫码（局域网地址二维码） | `showMobile` | 同上 | 四 |
-| 41 | 命令面板（Ctrl/⌘K）、Esc 关闭顺序 | palette | `features/palette` | 四 |
+| 35 | 输入区选技能（浮层）、技能标签 | skillPop | `features/skills/SkillPop` | 五 |
+| 36 | 我的技能：列表、详情（文件查看）、提交审核、回滚 | `openMySkills` 等 | `features/skills` | 五 |
+| 37 | 换头像（16 个水果） | avatar dialog | `features/account` | 五 |
+| 38 | 改密码 | pwd dialog | 同上 | 五 |
+| 39 | 我的用量：汇总、最近 20 轮 | usage | 同上 | 五 |
+| 40 | 手机扫码（局域网地址二维码） | `showMobile` | 同上 | 五 |
+| 41 | 命令面板（Ctrl/⌘K）、Esc 关闭顺序 | palette | `features/palette` | 五 |
 
 ### 知识库
 
 | # | 功能 | 现在 | 迁到 | 阶段 |
 |---|---|---|---|---|
-| 42 | 首页：统计、最近、类型和标签 | kb.js | `features/kb/Home` | 五 |
-| 43 | 笔记：列表、搜索、分区筛选、阅读（`[[链接]]`、反向链接）、新建、编辑、删除、历史 | kb.js | `features/kb/Notes` | 五 |
-| 44 | 关系图谱：拖动、缩放、点节点、按类型隐藏 | kb.js | `features/kb/Graph` | 五 |
-| 45 | 对话里的 `[[链接]]` 可点开笔记；沉淀经验；整理进知识库 | `kbLinkify`、`kbDistill`、`kbOrganize` | `lib/md.ts`、`features/kb` | 五 |
-| 46 | 文件预览上的“知识库里有这份文件的卡片”提示 | `kbFileBanner` | `features/kb` | 五 |
+| 42 | 首页：统计、最近、类型和标签 | kb.js | `features/kb/Home` | 六 |
+| 43 | 笔记：列表、搜索、分区筛选、阅读（`[[链接]]`、反向链接）、新建、编辑、删除、历史 | kb.js | `features/kb/Notes` | 六 |
+| 44 | 关系图谱：拖动、缩放、点节点、按类型隐藏 | kb.js | `features/kb/Graph` | 六 |
+| 45 | 对话里的 `[[链接]]` 可点开笔记；沉淀经验；整理进知识库 | `kbLinkify`、`kbDistill`、`kbOrganize` | `lib/md.ts`、`features/kb` | 六 |
+| 46 | 文件预览上的“知识库里有这份文件的卡片”提示 | `kbFileBanner` | `features/kb` | 六 |
 
 ### 管理后台
 
 | # | 功能 | 现在 | 迁到 | 阶段 |
 |---|---|---|---|---|
-| 47 | 用户：列表、新建、改角色、重置密码、停用 | admin.js | `features/admin/Users` | 六 |
-| 48 | 聊天记录：所有人的会话、打开查看、实时更新 | admin.js `adminOnSession` | `features/admin/Chats` | 六 |
-| 49 | 技能库：列表、安装本机技能、删除 | admin.js | `features/admin/Library` | 六 |
-| 50 | 待审核技能：通过 / 驳回，待审数量角标 | admin.js | `features/admin/Review` | 六 |
-| 51 | 文件操作记录、各人空间占用 | admin.js | `features/admin/Files` | 六 |
-| 52 | 用量：按人、按天 | admin.js | `features/admin/Usage` | 六 |
-| 53 | 分区管理：新建、改名、排序、删除 | admin.js | `features/admin/Sections` | 六 |
-| 54 | 设置 | admin.js | `features/admin/Settings` | 六 |
+| 47 | 用户：列表、新建、改角色、重置密码、停用 | admin.js | `features/admin/Users` | 七 |
+| 48 | 聊天记录：所有人的会话、打开查看、实时更新 | admin.js `adminOnSession` | `features/admin/Chats` | 七 |
+| 49 | 技能库：列表、安装本机技能、删除 | admin.js | `features/admin/Library` | 七 |
+| 50 | 待审核技能：通过 / 驳回，待审数量角标 | admin.js | `features/admin/Review` | 七 |
+| 51 | 文件操作记录、各人空间占用 | admin.js | `features/admin/Files` | 七 |
+| 52 | 用量：按人、按天 | admin.js | `features/admin/Usage` | 七 |
+| 53 | 分区管理：新建、改名、排序、删除 | admin.js | `features/admin/Sections` | 七 |
+| 54 | 设置 | admin.js | `features/admin/Settings` | 七 |
 
 ### 桌面壳和其它
 
 | # | 功能 | 现在 | 迁到 | 阶段 |
 |---|---|---|---|---|
-| 55 | 桌面壳：用本机程序打开文件、上传本机文件夹、同步回本机、系统通知 | `IS_DESKTOP` 分支 | `lib/desktop.ts` | 二 / 三 |
+| 55 | 桌面壳：用本机程序打开文件、上传本机文件夹、同步回本机、系统通知 | `IS_DESKTOP` 分支 | `lib/desktop.ts` | 三 / 四 |
 | 56 | PWA：manifest、图标、安全区 | index.html head | `web/index.html` | 一 |
 | 57 | 减少动效（`prefers-reduced-motion`） | CSS | `styles/` | 一 |
 
-## 9. 安全
+## 10. 安全
 
 迁移不能放松的几条：
 
@@ -326,7 +361,7 @@ element 的 id 和 class 全程不变，CSS 和老代码里的 `$("id")` 都继�
 - 所有改动类请求（POST / PUT / DELETE）走 `lib/api.ts`，带 `Authorization` 头。cookie 只用于带不了头的 GET。
 - 文件预览里的 HTML 类内容继续按现在的方式处理（不直接插入页面）。
 
-## 10. 风险
+## 11. 风险
 
 | 风险 | 对策 |
 |---|---|
