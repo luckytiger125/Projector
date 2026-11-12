@@ -169,6 +169,26 @@
 cd desktop && npm install && npm run tauri dev
 ```
 
+## 前端开发
+
+网页端的源码在 `web/`（Vite + TypeScript + Preact），构建产物在 `static/app/`，**产物是提交在仓库里的**。所以台式机上不需要装 Node：下载发布包或者直接检出仓库，都能直接运行；运行时也不访问外网，字体只用系统自带的。
+
+只有改网页端的人需要 Node（22 或更新）：
+
+```bash
+cd web
+npm ci
+npm run dev      # 开发：http://localhost:5173，接口转发到本机 8080 的服务端（用 PROJECTOR_PORT 换端口）
+npm run check    # 类型检查 + 单元测试
+npm run build    # 构建到 ../static/app
+```
+
+改了 `web/` 以后要重新 `npm run build`，把 `static/app/` 的变化和源码一起提交。CI 会重新构建一遍，产物和提交的不一致就不通过。文件名带内容哈希，首页不缓存，更新后刷新就是新版本。
+
+- 目录：`web/src/features/` 按功能分（登录、外壳、值班板、对话、文件库、技能、账户、知识库、管理后台），`web/src/stores/` 是状态，`web/src/lib/` 是不依赖界面的工具，`web/src/styles/tokens.css` 是颜色、字号、间距等设计变量。
+- 设计样稿在 `docs/design/`（静态网页，直接用浏览器打开 `index.html`），迁移方案在 `docs/plans/`。
+- 页面有自己的网址（`/s/会话号`、`/files`、`/kb/notes`、`/admin/users` 等），刷新和前进后退都停在原处。
+
 ## 运行测试
 
 ```bash
@@ -177,6 +197,8 @@ python -m venv .venv
 pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest -q
 ```
+
+网页端的测试：`cd web && npm run check`。
 
 测试用临时目录当数据、文件库、工作区和知识库，不会动 `data/` 和真实的 D 盘。
 
