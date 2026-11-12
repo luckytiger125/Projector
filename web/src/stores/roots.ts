@@ -1,5 +1,5 @@
 // 文件库、工作区的根目录（/api/files 返回的 roots）和“能不能预览 Office 文件”。
-// 对话里把完整路径缩成“文件库/…”、把路径变成可点的链接都要用；老的文件库代码也通过 bridge 读写它。
+// 对话里把完整路径缩成“文件库/…”、把路径变成可点的链接、后台文件记录里缩短路径都要用。
 import { signal } from "@preact/signals";
 import { api } from "../lib/api";
 

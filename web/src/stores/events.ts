@@ -31,7 +31,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | 0 = 0;
 // ---------- 整体重载 ----------
 
 const reloadHooks = new Set<() => void>();
-/** 整体重载时额外要做的事（老代码里：文件库根目录还没取过就取一次），桥接层接上 */
+/** 整体重载时额外要做的事（见 boot.ts：文件库根目录还没取过就取一次） */
 export function onReload(fn: () => void): () => void {
   reloadHooks.add(fn);
   return () => reloadHooks.delete(fn);
@@ -45,7 +45,7 @@ export function reloadAll(): void {
 
 // ---------- 事件分发 ----------
 
-/** 处理一个已解析的事件（不含 resync 以外的连接逻辑）。导出是为了测试和第二步的桥接 */
+/** 处理一个已解析的事件（不含 resync 以外的连接逻辑）。导出是为了测试 */
 export function handleEvent(ev: ServerEvent): void {
   if (ev.type === "resync") return reloadAll();
 

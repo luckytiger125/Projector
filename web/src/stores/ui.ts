@@ -32,8 +32,8 @@ export interface DialogButton {
 }
 export interface DialogSpec {
   title: string;
-  /** 内容：组件、纯文字，或（过渡期老代码）一段 HTML 字符串 */
-  body: ComponentChildren | { html: string };
+  /** 内容：组件或纯文字 */
+  body: ComponentChildren;
   buttons: DialogButton[];
   wide: boolean;
   /** 危险操作：顶边用朱砂色 */

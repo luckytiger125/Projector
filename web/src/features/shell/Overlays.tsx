@@ -52,7 +52,6 @@ export function DialogHost() {
     return () => clearTimeout(t);
   }, [d]);
   if (!d) return null;
-  const html = typeof d.body === "object" && d.body !== null && "html" in (d.body as object) ? (d.body as { html: string }).html : null;
   const value = () => input.current?.value ?? "";
   const primaryClick = () => foot.current?.querySelector<HTMLButtonElement>("button[data-primary]:last-of-type")?.click();
   return (
@@ -62,17 +61,13 @@ export function DialogHost() {
           <h4>{d.title}</h4>
           <button class="icon-btn" title="关闭" aria-label="关闭" onClick={dismissDialog}><Icon name="x" size={18} /></button>
         </header>
-        {html !== null
-          ? <div class="dlg-body content" id="dlgBody" key={html} dangerouslySetInnerHTML={{ __html: html }} />
-          : (
-            <div class="dlg-body" id="dlgBody">
-              {typeof d.body === "string" ? (d.body ? <p>{d.body}</p> : null) : (d.body as any)}
-              {d.input && (
-                <input class="input" ref={input} value={d.input.value} placeholder={d.input.placeholder}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); primaryClick(); } }} />
-              )}
-            </div>
+        <div class="dlg-body" id="dlgBody">
+          {typeof d.body === "string" ? (d.body ? <p>{d.body}</p> : null) : d.body}
+          {d.input && (
+            <input class="input" ref={input} value={d.input.value} placeholder={d.input.placeholder}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); primaryClick(); } }} />
           )}
+        </div>
         {d.buttons.length > 0 && (
           <div class="acts" ref={foot}>
             {d.buttons.map((b, i) => <DialogButtonEl key={i} b={b} value={value} busy={busy} setBusy={setBusy} />)}

@@ -1,6 +1,7 @@
 // 应用外壳：竖栏、值班目录、主区域（值班板 / 对话）、步骤记录页、通用对话框、提示条、命令面板、登录层。
 import { useEffect } from "preact/hooks";
 import { MobileSheet } from "./features/account/Mobile";
+import { AdminSheet } from "./features/admin/Admin";
 import { UsageSheet } from "./features/account/Usage";
 import { Login } from "./features/auth/Login";
 import { Chat } from "./features/chat/Chat";
@@ -29,11 +30,9 @@ function useGlobalKeys() {
       if (e.key !== "Escape") return;
       if (paletteOpen.value) { paletteOpen.value = false; return; }
       if (dialog.value) { dismissDialog(); return; }
-      const box = document.getElementById("adminBox");
-      if (box && box.classList.contains("show")) { box.classList.remove("show"); return; }
       const o = overlayRoute.value?.name;
       // 知识库里有没保存的编辑时，关闭由离开守卫先问一句
-      if (o === "steps" || o === "files" || o === "kb" || o === "skills" || o === "usage" || o === "mobile") closeOverlay();
+      if (o === "steps" || o === "files" || o === "kb" || o === "skills" || o === "usage" || o === "mobile" || o === "admin") closeOverlay();
     };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
@@ -60,6 +59,7 @@ export function App() {
       {u && <SkillsSheet />}
       {u && <UsageSheet />}
       {u && <MobileSheet />}
+      {u && <AdminSheet />}
       <FilesHost />
       <DialogHost />
       <Palette />

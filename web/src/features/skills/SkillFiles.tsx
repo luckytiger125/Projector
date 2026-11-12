@@ -42,7 +42,7 @@ export function SkillFiles({ files, changes, extra }: { files: SkillFile[]; chan
 
 let opened = 0;
 
-/** 在宽对话框里打开文件查看器；extra 可以是组件，也可以是一段 HTML（管理后台还在用老代码拼的说明） */
+/** 在宽对话框里打开文件查看器；extra 是放在文件列表上面的说明（后台审核技能用） */
 export function openSkillFiles(title: string, files: SkillFile[], buttons: DialogButton[] = [], extra?: ComponentChildren, changes?: SkillChanges | null): void {
   openDialog(title, <SkillFiles key={++opened} files={files} changes={changes} extra={extra} />, buttons, true);
 }

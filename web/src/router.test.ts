@@ -40,6 +40,8 @@ describe("parseRoute", () => {
     expect(parseRoute("/admin")).toEqual({ name: "admin", tab: "users" });
     expect(parseRoute("/admin/settings")).toEqual({ name: "admin", tab: "settings" });
     expect(parseRoute("/admin/nope")).toEqual({ name: "notfound" });
+    expect(parseRoute("/admin/chats", "?session=ab-1")).toEqual({ name: "admin", tab: "chats", session: "ab-1" });
+    expect(parseRoute("/admin/users", "?session=ab-1")).toEqual({ name: "admin", tab: "users" });
   });
   it("不认识的路径、坏的编码、带点或斜杠的会话 id", () => {
     expect(parseRoute("/nope")).toEqual({ name: "notfound" });
@@ -58,7 +60,7 @@ describe("routeToPath", () => {
     { name: "files" }, { name: "files", path: "D:\\报告\\a b&c.md" }, { name: "files", trash: true },
     { name: "kb", tab: "home" }, { name: "kb", tab: "notes" }, { name: "kb", tab: "notes", note: "团队/规范?1" }, { name: "kb", tab: "graph" },
     { name: "skills" }, { name: "skills", skill: "周报 助手" }, { name: "usage" }, { name: "mobile" },
-    { name: "admin", tab: "users" }, { name: "admin", tab: "settings" },
+    { name: "admin", tab: "users" }, { name: "admin", tab: "settings" }, { name: "admin", tab: "chats", session: "ab12" },
   ];
   it("生成后再解析得到同一个路由", () => {
     for (const r of cases) expect(parsePath(routeToPath(r)), routeToPath(r)).toEqual(r);

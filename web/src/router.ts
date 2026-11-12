@@ -20,7 +20,7 @@ export type Route =
   | { name: "skills"; skill?: string }             // /skills、/skills/{name}
   | { name: "usage" }
   | { name: "mobile" }
-  | { name: "admin"; tab: AdminTab }               // /admin/{tab}
+  | { name: "admin"; tab: AdminTab; session?: string }   // /admin/{tab}、/admin/chats?session=…
   | { name: "notfound" };
 
 /** 写进 history.state 的内容 */
@@ -84,7 +84,11 @@ export function parseRoute(pathname: string, search = ""): Route {
   if (a === "mobile" && seg.length === 1) return { name: "mobile" };
   if (a === "admin") {
     if (seg.length === 1) return { name: "admin", tab: "users" };
-    if (seg.length === 2 && (ADMIN_TABS as readonly string[]).includes(b)) return { name: "admin", tab: b as AdminTab };
+    if (seg.length === 2 && (ADMIN_TABS as readonly string[]).includes(b)) {
+      // 聊天记录里点开的会话：/admin/chats?session=…（只有聊天记录页签认）
+      const sid = b === "chats" ? q.get("session") : null;
+      return sid && ID_RE.test(sid) ? { name: "admin", tab: "chats", session: sid } : { name: "admin", tab: b as AdminTab };
+    }
     return { name: "notfound" };
   }
   return { name: "notfound" };
@@ -108,7 +112,7 @@ export function routeToPath(r: Route): string {
     case "skills": return r.skill ? "/skills/" + enc(r.skill) : "/skills";
     case "usage": return "/usage";
     case "mobile": return "/mobile";
-    case "admin": return "/admin/" + r.tab;
+    case "admin": return "/admin/" + r.tab + (r.tab === "chats" && r.session ? "?session=" + enc(r.session) : "");
   }
 }
 

@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import preact from "@preact/preset-vite";
-import legacy from "./plugins/legacy.ts";
 
 const target = `http://127.0.0.1:${process.env.PROJECTOR_PORT || 8080}`;
 
@@ -24,7 +23,7 @@ const proxy = {
 
 export default defineConfig({
   base: "/static/app/",
-  plugins: [preact(), legacy()],
+  plugins: [preact()],
   build: { outDir: "../static/app", emptyOutDir: true },
   server: { proxy },
 });

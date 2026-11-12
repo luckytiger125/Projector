@@ -1,5 +1,5 @@
 // 线条图标（24×24）。路径从老代码 ui.js 原样搬来。
-// Icon 给组件用；iconSvg 返回 SVG 字符串，给仍用 innerHTML 拼界面的老代码和桥接层用。
+// Icon 给组件用。
 import type { JSX } from "preact";
 
 export const ICON_PATHS: Record<string, string> = {

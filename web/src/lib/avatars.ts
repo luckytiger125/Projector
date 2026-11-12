@@ -1,4 +1,4 @@
-// 水果头像和橙光球（SVG 字符串）。从老代码 ui.js 原样搬来：组件用 dangerouslySetInnerHTML 放进去，老代码（经 bridge）直接拼进 innerHTML。
+// 水果头像和橙光球（SVG 字符串）。从老代码 ui.js 原样搬来：组件用 dangerouslySetInnerHTML 放进去。
 // 内容全部是本文件里写死的常量和数字，不含用户输入（id 只用来查表）。
 
 // ---------- 预设头像：16 个水果小人 ----------

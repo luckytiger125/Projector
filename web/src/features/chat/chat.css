@@ -30,7 +30,7 @@
 .px .md table + ul, .px .md table + ol, .px .md table + pre, .px .md table + blockquote, .px .md ul + table, .px .md ol + table, .px .md pre + table, .px .md blockquote + p { margin-top: var(--s-3); }
 .px .md code { font: 13px var(--f-mono); background: var(--navy-soft); padding: 1px 5px; border-radius: var(--r-1); }
 .px .md pre { font: 13px/1.6 var(--f-mono); background: var(--navy); color: var(--on-navy); padding: var(--s-3) var(--s-4); border-radius: var(--r-1); overflow-x: auto; }
-/* 老的 .md 表格规则（base.css，后台还在用）给单元格加了四周边框和底色，这里清掉：样稿里表格只有横线 */
+/* 回复里的表格：样稿里只有横线 */
 .px .md table { display: table; margin: 0; overflow: visible; border-collapse: collapse; font-size: var(--t-13); width: 100%; }
 .px .md th { text-align: left; font-weight: 600; background: none; border: 0; border-bottom: 1.5px solid var(--ink-1); padding: var(--s-1) var(--s-3) var(--s-1) 0; }
 .px .md td { border: 0; border-bottom: 1px solid var(--hair); padding: 6px var(--s-3) 6px 0; }

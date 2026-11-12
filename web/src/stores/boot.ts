@@ -4,8 +4,9 @@ import { me, bootstrapAuth } from "./auth";
 import type { User } from "../lib/types";
 import { resetChat } from "./chat";
 import { loadSkills, resetComposer } from "./composer";
-import { connect } from "./events";
+import { connect, onReload } from "./events";
 import { resetFiles } from "./files";
+import { loadRoots } from "./roots";
 import { loadSections, resetSessions } from "./sessions";
 
 const enterHooks = new Set<(u: User) => void>();
@@ -31,6 +32,7 @@ export function enterApp(user: User): void {
 
 /** 启动：有令牌就补种 cookie、取 /api/me、进入应用；没有令牌显示登录页（登录成功后由登录组件调用 enterApp） */
 export async function startApp(): Promise<void> {
+  onReload(() => { void loadRoots(); });   // 整体重载时，文件库根目录还没取过就取一次（对话里缩短路径要用）
   const u = await bootstrapAuth();
   if (u) enterApp(u);
 }

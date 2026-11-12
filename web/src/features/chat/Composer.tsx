@@ -16,7 +16,7 @@ import { openLocalDialog } from "../files/local";
 // ---------- 提问面板 ----------
 const REC = /（推荐）$|\(推荐\)$/;
 
-function AskPanel() {
+export function AskPanel() {
   const q = questions.value[0];
   const dock = useRef<HTMLDivElement>(null);
   // 键盘：数字键选项，回车下一题或提交（输入框里只有“其他”和“补充说明”两个吃回车）

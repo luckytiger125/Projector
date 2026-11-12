@@ -42,6 +42,7 @@
 .px .dlg-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-2) var(--s-5); }
 .px .dlg-head h4 { margin: 0; }
 .px .dlg-body { padding: 0 var(--s-5); overflow-y: auto; min-height: 0; color: var(--ink-2); }
+.px .dlg-body p { white-space: pre-line; }
 .px .dlg-body .err { color: var(--vermilion); font-size: var(--t-13); min-height: 1.2em; }
 .px .dlg-body .input { margin-top: var(--s-3); }
 .px .dlg .acts { padding: 0 var(--s-5) var(--s-4); margin-top: var(--s-4); }

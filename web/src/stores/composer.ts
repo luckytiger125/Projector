@@ -33,7 +33,7 @@ export async function loadSkills(): Promise<void> {
   mySkills.value = await api<Skill[]>("/api/skills/mine").catch(() => []);
 }
 
-// ---------- 输入框本身（不受控，只留一个句柄给老弹层和命令面板用） ----------
+// ---------- 输入框本身（不受控，只留一个句柄给命令面板等用） ----------
 let inputEl: HTMLTextAreaElement | null = null;
 let pendingText: string | null = null;
 

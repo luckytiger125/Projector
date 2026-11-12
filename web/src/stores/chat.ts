@@ -195,7 +195,7 @@ export async function loadOlder(beforeApply?: () => void): Promise<boolean> {
 // ---------- 会话更新（session 事件、新建会话） ----------
 
 const sessionListeners = new Set<(s: Session) => void>();
-/** 订阅每一次会话更新（老的管理后台用它刷新聊天记录列表，桥接层接上） */
+/** 订阅每一次会话更新（管理后台的聊天记录页签用它刷新列表） */
 export function onSessionUpdate(fn: (s: Session) => void): () => void {
   sessionListeners.add(fn);
   return () => sessionListeners.delete(fn);
