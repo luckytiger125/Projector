@@ -122,6 +122,11 @@
 .px .ad-mode.on::after { content: "✓"; position: absolute; right: var(--s-3); top: var(--s-3); width: 20px; height: 20px; border-radius: 50%; background: var(--navy); color: var(--on-navy); font-size: 12px; display: grid; place-items: center; }
 .px .ad-mode b { display: flex; align-items: center; gap: var(--s-2); font-size: var(--t-14); }
 .px .ad-mode p { margin-top: var(--s-1); font-size: var(--t-13); color: var(--ink-2); }
+.px .ad-runner { margin-top: var(--s-3); margin-bottom: 0; }
+.px .ad-sub { margin-top: var(--s-4); }
+.px .ad-note { display: flex; align-items: flex-start; gap: var(--s-2); margin-top: var(--s-3); padding: var(--s-2) var(--s-3); font-size: var(--t-13); color: var(--ink-2); background: var(--paper-2); border: 1px solid var(--hair-strong); border-radius: var(--r-1); overflow-wrap: anywhere; }
+.px .ad-note svg { flex: none; margin-top: 2px; }
+.px .ad-note.err { color: var(--danger); border-color: currentColor; }
 .px .ad-conc { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-3); }
 .px .ad-conc .input { width: 80px; }
 .px .ad-tagbox { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-3); padding: var(--s-2); background: var(--paper-0); border: 1px solid var(--hair-strong); border-radius: var(--r-1); }

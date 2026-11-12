@@ -37,6 +37,8 @@ export interface FileOp { created: number; user_id: number; who?: string; action
 export interface AdminSettings {
   perm_mode: "standard" | "strict" | string; max_concurrent: number;
   ask_cmds: string[]; bash_allow: string[]; default_ask: string[]; default_allow: string[]; safe: string[];
+  /** 运行方式：cli 每轮起一个 claude 进程（默认）/ sdk 常驻会话。老版本服务端没有这几个字段 */
+  runner_mode?: "cli" | "sdk" | string; sdk_available?: boolean; sdk_error?: string; sdk_idle_seconds?: number; sdk_clients?: number;
 }
 export interface AdminSection extends Section { session_count?: number; note_count?: number }
 export interface AdminUsageData extends UsageData {
