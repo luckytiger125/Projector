@@ -307,12 +307,21 @@ def build_options(sdk, spec: TurnSpec, *, cli_path: str, resume: str | None = No
         system_prompt={"type": "preset", "preset": "claude_code"},
         can_use_tool=can_use_tool,
         hooks={"PreToolUse": [sdk.HookMatcher(matcher=None, hooks=[guard_hook], **hook_kwargs)]},
-        mcp_servers={"center": spec.mcp_center,
-                     "projector": sdk.create_sdk_mcp_server("projector", tools=[ask_tool])},
+        # 这里只放进程内服务：SDK 会把 mcp_servers 整个序列化进命令行参数，外部服务的配置里有内部令牌，不能出现在命令行上
+        mcp_servers={"projector": sdk.create_sdk_mcp_server("projector", tools=[ask_tool])},
         env={"MCP_TOOL_TIMEOUT": str(int(approvals.APPROVAL_TIMEOUT * 1000) + 60000), "MCP_TIMEOUT": "60000"},
     )
+    extra = {}
     if spec.hint_file:
-        kwargs["extra_args"] = {"append-system-prompt-file": spec.hint_file}
+        extra["append-system-prompt-file"] = spec.hint_file
+    if spec.mcp_center:
+        # 外部工具服务（知识库、技能、读文档）的配置写进文件再传，和 cli 模式同一个文件（在 deny 规则保护的 data/mcp 下）
+        mcp_file = store.DATA / "mcp" / f"{spec.sid}.json"
+        mcp_file.parent.mkdir(parents=True, exist_ok=True)
+        mcp_file.write_text(json.dumps({"mcpServers": {"center": spec.mcp_center}}), encoding="utf-8")
+        extra["mcp-config"] = str(mcp_file)
+    if extra:
+        kwargs["extra_args"] = extra
     if resume:
         kwargs["resume"] = resume
     if spec.bypass:

@@ -246,3 +246,11 @@ def client_count() -> int
 14. 老会话（`cli` 模式下聊过的）切到 `sdk` 后能接着聊；再切回 `cli` 也能。
 15. DeepSeek：以上 4~9 在 `ANTHROPIC_BASE_URL` 指向 DeepSeek 时重做一遍；特别看思考内容、工具调用、用量（DeepSeek 下 `total_cost_usd` 可能没有意义）。
 16. 排队和并发上限在 `sdk` 模式下照常工作；重启服务后进行中的轮次显示“被中断”。
+
+## 10. 实现后的修订（与上文不一致的地方，以这里为准）
+
+- **外部工具服务的配置走文件，不走 `mcp_servers`**。SDK 会把 `mcp_servers` 整个序列化进 `--mcp-config` 命令行参数，里面有内部令牌 `CENTER_TOKEN`，同机的人用进程列表就能看到（本机冒烟时发现）。改为：`mcp_servers` 里只放进程内的 `projector`；外部的 `center` 写进 `data/mcp/<sid>.json`（和 `cli` 模式同一个文件，受 deny 规则保护），用 `extra_args={"mcp-config": 路径}` 传。实测两个 `--mcp-config` 可以并存。所以 `sdk` 模式下会写 `hint_<sid>.txt` 和 `<sid>.json` 两个文件。
+- **`on_failure="block"` 要看 Claude Code 版本**。本机的 2.1.280 不认这个参数（`connect()` 直接报错），2.1.321 认。实现为：先带上连接，报错文字里有 `on_failure` 就去掉重连，并在会话日志里记一行。去掉后钩子“出错即拒绝”只靠回调自身的 try/except。
+- **停止收尾期间不复用客户端**：加了 `stopping` 标记，避免用户停止后立刻发的下一条消息被收尾时的关闭打断。
+- `SDK_MAX_CLIENTS` 下限是 1，没有和并发上限取大（`sdk_runner` 不能 import `runner`）；全部在忙时本来就不限制，效果相同。
+- `CanUseToolShadowedWarning` 用进程级过滤器压掉（`catch_warnings` 跨 await 会在多个客户端之间互相覆盖）。

@@ -467,15 +467,18 @@ def test_options_standard(fx, alice, monkeypatch):
     assert o.plugins == [{"type": "local", "path": str(Path("/tmp/plug"))}]
     assert o.env["MCP_TIMEOUT"] == "60000"
     assert o.env["MCP_TOOL_TIMEOUT"] == str(int(approvals.APPROVAL_TIMEOUT * 1000) + 60000)
-    assert set(o.mcp_servers) == {"center", "projector"}
-    assert o.mcp_servers["center"]["args"][0].endswith("approval_mcp.py")
-    assert o.mcp_servers["center"]["env"]["CENTER_SESSION"] == sid
+    # 外部工具服务的配置（里面有内部令牌）写进文件传给 claude，不能出现在命令行参数里
+    assert set(o.mcp_servers) == {"projector"}
+    center = json.loads(open(o.extra_args["mcp-config"], encoding="utf-8").read())["mcpServers"]["center"]
+    assert center["args"][0].endswith("approval_mcp.py") and center["env"]["CENTER_SESSION"] == sid
+    assert o.extra_args["mcp-config"] == str(store.DATA / "mcp" / f"{sid}.json")
+    assert store.INTERNAL_TOKEN not in json.dumps({k: str(v) for k, v in vars(o).items() if k != "can_use_tool"})
     assert o.mcp_servers["projector"]["type"] == "sdk" and o.mcp_servers["projector"]["tools"][0].name == "ask_user"
     assert callable(o.can_use_tool) and callable(o.stderr)
     (m,) = o.hooks["PreToolUse"]
     assert m.matcher is None and m.on_failure == "block" and len(m.hooks) == 1
-    # sdk 模式不写 settings / guard / mcp 配置文件
-    for f in (f"settings_{sid}.json", f"guard_{sid}.json", f"{sid}.json"):
+    # sdk 模式不写 settings / guard 文件（mcp 配置文件要写：令牌不能上命令行）
+    for f in (f"settings_{sid}.json", f"guard_{sid}.json"):
         assert not (store.DATA / "mcp" / f).exists()
 
 
@@ -1265,10 +1268,11 @@ def test_build_options_with_real_sdk(tmp_path):
     assert isinstance(o, real.ClaudeAgentOptions)
     assert o.cli_path == "/bin/claude" and o.resume == "r1" and o.cwd == str(tmp_path)
     assert o.hooks["PreToolUse"][0].on_failure == "block" and callable(o.hooks["PreToolUse"][0].hooks[0])
-    assert callable(o.can_use_tool) and set(o.mcp_servers) == {"center", "projector"}
+    assert callable(o.can_use_tool) and set(o.mcp_servers) == {"projector"}
     assert o.mcp_servers["projector"]["type"] == "sdk"
     assert o.system_prompt == {"type": "preset", "preset": "claude_code"}
-    assert o.extra_args == {"append-system-prompt-file": spec.hint_file}
+    assert o.extra_args["append-system-prompt-file"] == spec.hint_file
+    assert set(o.extra_args) <= {"append-system-prompt-file", "mcp-config"}
     assert o.include_partial_messages is True and o.max_buffer_size == 32 * 1024 * 1024
     assert json.loads(o.settings) == {"permissions": {"ask": ["Bash(rm:*)"]}}
     assert o.plugins == [{"type": "local", "path": "/p"}] and o.permission_mode is None
