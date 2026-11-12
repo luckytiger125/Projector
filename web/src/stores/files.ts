@@ -8,6 +8,7 @@
 import { batch, effect, signal, untracked } from "@preact/signals";
 import { api, apiBlob } from "../lib/api";
 import { kindOf } from "../lib/filekind";
+import { decodeText, looksBinary } from "../lib/textcodec";
 import { sanitizeHtml, md } from "../lib/markdown";
 import { loadDocx, loadXlsx } from "../lib/vendor";
 import type { Route } from "../router";
@@ -21,7 +22,7 @@ import { office, roots } from "./roots";
 export interface FileEntry { name: string; dir: boolean; size: number; mtime: number; path: string; abs: string }
 export interface Crumb { label: string; path: string }
 export interface TrashItem {
-  id: string; name: string; is_dir?: number | boolean; size: number; orig_path: string; personal?: boolean; owner_name?: string;
+  id: string; name: string; is_dir?: number | boolean; size: number; orig_path: string; orig_virtual?: string; personal?: boolean; owner_name?: string;
   can_restore?: boolean; who?: string; deleted_at: number; reason?: string; days_left: number;
 }
 export type FileMode = "browse" | "workdir";
@@ -200,6 +201,8 @@ async function runPreview(e: FileEntry, seq: number): Promise<void> {
     } else if (kind === "md" || kind === "text") {
       const d = await api<{ text: string; truncated: boolean }>("/api/files/text?path=" + encodeURIComponent(e.path));
       if (!live()) return;
+      // 扩展名是文本、内容其实是二进制的文件：满屏控制字符没有意义，按“放不了”处理
+      if (kind === "text" && looksBinary(d.text)) return set({ t: "cannot", why: "这个文件的格式或编码这里放不了。" });
       set(kind === "md" ? { t: "md", html: md(d.text), truncated: !!d.truncated } : { t: "text", text: d.text, truncated: !!d.truncated });
     } else if (kind === "docx") {
       if (e.size > 50 * 1048576) return set({ t: "cannot", why: "文件太大，不适合在这里预览。" });
@@ -211,7 +214,10 @@ async function runPreview(e: FileEntry, seq: number): Promise<void> {
       const XLSX = await loadXlsx();
       const buf = await (await apiBlob(url)).arrayBuffer();
       if (!live()) return;
-      const wb = XLSX.read(buf, { type: "array", codepage: 936 });
+      // csv 自己先解码成文字再交给 xlsx（它按字节猜编码会把中文弄乱）；其余格式照旧，老 xls 没写编码时按 GBK
+      const wb = /\.csv$/i.test(e.name)
+        ? XLSX.read(decodeText(buf), { type: "string" })
+        : XLSX.read(buf, { type: "array", codepage: 936 });
       set({
         t: "sheet", names: wb.SheetNames,
         render: (name: string) => sanitizeHtml(XLSX.utils.sheet_to_html(wb.Sheets[name], { header: "", footer: "" })),

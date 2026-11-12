@@ -1,4 +1,5 @@
 // 笔记页签：左边是列表（类型和标签筛选、搜索结果），右边是正文 / 编辑器 / 空白提示。手机上列表和正文是两级。
+import { cleanSnippet } from "../../lib/textcodec";
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef } from "preact/hooks";
 import { orb } from "../../lib/avatars";
@@ -60,7 +61,7 @@ function Row({ n, i, hit }: { n: KbBrief | KbHit; i: number; hit: boolean }) {
           {n.status === "过时" ? <span class="tag">过时</span> : null}
         </span>
       </h5>
-      <p><span class="sm">{hit ? (n as KbHit).snippet : (n.summary || n.type)}</span><span class="tm">{rel(n.mtime)}</span></p>
+      <p><span class="sm">{hit ? cleanSnippet((n as KbHit).snippet) : (n.summary || n.type)}</span><span class="tm">{rel(n.mtime)}</span></p>
     </a>
   );
 }
@@ -151,7 +152,7 @@ function NoteView({ d }: { d: KbNoteDetail }) {
           <h6>提到这条的笔记 <small>{d.backlinks.length}</small></h6>
           {d.backlinks.length
             ? d.backlinks.map((b) => (
-              <a key={b.path} class={"note-row kv-bl k-" + kcls(b.type)} onClick={() => openNote(b.path)}><h5>{b.title}</h5><p>{b.snippet}</p></a>
+              <a key={b.path} class={"note-row kv-bl k-" + kcls(b.type)} onClick={() => openNote(b.path)}><h5>{b.title}</h5><p>{cleanSnippet(b.snippet)}</p></a>
             ))
             : <p class="kb-hint">还没有别的笔记链接到这里。在其他笔记里写 <code>{"[[" + n.title + "]]"}</code> 就能连上。</p>}
         </section>

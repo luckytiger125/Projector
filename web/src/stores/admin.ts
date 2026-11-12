@@ -7,6 +7,7 @@ import type { AdminTab } from "../router";
 import { mainRoute, navigate, replace, route } from "../router";
 import type { Section, Session } from "../lib/types";
 import { me } from "./auth";
+import { loadSections as loadSideSections } from "./sessions";
 import { current, onSessionUpdate, openSession } from "./chat";
 import { syncRoute } from "./routesync";
 import { usageQuery } from "./usage";
@@ -247,9 +248,11 @@ export function usageCsv(): string | null {
 // ---------- 分区 ----------
 export async function sectionCreate(name: string): Promise<void> {
   await post("/api/sections", { name });
+  void loadSideSections();   // 左栏的分区列表跟着更新
 }
 export async function sectionPatch(id: number, body: Record<string, unknown>): Promise<void> {
   await post(`/api/sections/${id}`, body, "PATCH");
+  void loadSideSections();
   await reload();
 }
 export const reloadSections = (): Promise<void> => reload();

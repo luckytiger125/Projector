@@ -76,8 +76,14 @@ export async function loadVersionFiles(name: string, v: number): Promise<{ files
 /** 上传技能文件（zip 或文件夹）并提交审核；changelog 是更新说明。upload 拿到提交 id 去上传 */
 export async function submitSkill(upload: (id: string) => Promise<unknown>, changelog: string): Promise<{ name: string }> {
   const sub = await post("/api/skills/submissions");
-  await upload(sub.id);
-  return post(`/api/skills/submissions/${sub.id}/submit`, { changelog });
+  try {
+    await upload(sub.id);
+    return await post(`/api/skills/submissions/${sub.id}/submit`, { changelog });
+  } catch (e) {
+    // 上传或检查没过：把刚建的草稿删掉，不在服务端留垃圾（删不掉也不影响报错）
+    await post(`/api/skills/submissions/${sub.id}`, undefined, "DELETE").catch(() => {});
+    throw e;
+  }
 }
 
 export const uploadZip = (f: File) => (id: string) => api(`/api/skills/submissions/${id}/zip`, { method: "PUT", body: f, raw: true });

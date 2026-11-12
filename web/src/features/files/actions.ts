@@ -162,6 +162,7 @@ export async function purgeItem(t: TrashItem): Promise<void> {
 /** 回收站一行的“原位置”文字：沿用老代码 */
 export function trashWhere(t: TrashItem): string {
   const where = t.can_restore === false && t.owner_name ? t.owner_name + " 的个人文件"
+    : t.orig_virtual?.startsWith("ws:") ? "原来在 我的文件/" + t.orig_virtual.slice(3)   // 自己的个人文件：按“我的文件”里的路径显示
     : t.orig_path ? "原来在 " + (shortPath(t.orig_path, roots.value) || "") : t.personal ? "个人文件" : "";
   return where;
 }
