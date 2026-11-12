@@ -1039,6 +1039,7 @@ def _win(monkeypatch):
 
 
 def test_resolve_cli_non_windows_and_exe_unchanged(monkeypatch):
+    monkeypatch.setattr(sdk_runner, "_is_windows", lambda: False)   # 在 Windows 的 CI 上跑时也按“非 Windows”验证这一条
     assert sdk_runner.resolve_cli("/usr/bin/claude.cmd") == "/usr/bin/claude.cmd"   # 非 Windows 原样
     _win(monkeypatch)
     assert sdk_runner.resolve_cli("C:\\x\\claude.exe") == "C:\\x\\claude.exe"
@@ -1078,6 +1079,7 @@ def test_run_turn_windows_cmd_without_exe_returns_message(fx, tmp_path, monkeypa
     assert fx.fake.instances == []
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="真 Windows 上事件循环本来就是 Proactor，测不到报错分支")
 def test_run_turn_windows_requires_proactor_loop(fx, tmp_path, monkeypatch):
     _win(monkeypatch)
     final, _ = turn(fx, mkspec(tmp_path))   # 本机的事件循环不是 Proactor
