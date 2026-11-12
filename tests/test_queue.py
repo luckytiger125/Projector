@@ -101,6 +101,8 @@ def env(monkeypatch):
     monkeypatch.setattr(runner, "run_claude", fake)
     monkeypatch.setattr(runner, "find_claude", lambda: "claude")
     monkeypatch.setattr(runner, "build_command", lambda *a, **k: ["claude"])
+    # 假进程没有 pid；Windows 上真的 _kill_tree 会去调 taskkill，这里统一换成直接 kill
+    monkeypatch.setattr(runner, "_kill_tree", lambda proc: proc.kill() if proc.poll() is None else None)
     monkeypatch.delenv("MAX_CONCURRENT", raising=False)
     store.db("DELETE FROM settings WHERE key='max_concurrent'")
     runner.RUNS.clear()
