@@ -109,6 +109,58 @@
 - 对 Claude 的检查是看路径和命令的文字，绕得过去：让 Claude 写脚本在运行时拼出路径、用变量或编码把路径藏起来、通过符号链接或短文件名访问，都拦不住；技能里的脚本同理。它能防的是“无意中翻到”和“随口让 Claude 去看别人的文件”，防不住有技术能力、存心要看的人。
 - 默认工作区就在文件库（D 盘）里面。想让两者彻底分开，可以用 `WORKSPACE_ROOT` 把工作区放到文件库以外的盘或文件夹。
 
+## 运行方式（cli / sdk）
+
+服务端调用 Claude Code 有两种方式，用一个开关切换，**默认是 `cli`**：
+
+| 运行方式 | 做法 | 状态 |
+|---|---|---|
+| `cli`（默认） | 每一轮对话起一个 `claude -p` 进程，结束就退出，下一轮靠 `--resume` 接上 | 一直在用的方式 |
+| `sdk` | 用 [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-python) 给每个会话保持一个常驻的 `claude` 进程，同一会话后面的消息不用再冷启动 | **新加的，还没在 Windows 和 DeepSeek 上验证过**，启用前先按下面的清单试一遍 |
+
+两种方式下界面、权限三档、文件隔离、知识库和技能工具、排队和并发上限、用量统计都一样，会话也通用：在一种方式下聊过的会话，切到另一种能接着聊。
+
+**启用 `sdk`：**
+
+1. 装依赖（可选依赖，不装不影响 `cli`）：在服务文件夹里运行 `.venv\Scripts\pip install -r requirements-sdk.txt`。这个包自带一份约 300 MB 的 Claude Code，下载要等一会儿。
+2. 台式机上的 Claude Code 必须是**原生的 `claude.exe`**（官方安装脚本 `irm https://claude.ai/install.ps1 | iex` 装出来的，在 `%USERPROFILE%\.local\bin\claude.exe`）。用 npm 装的是 `claude.cmd`，SDK 出于安全原因拒绝运行它；这种情况下服务会依次去找 `claude.exe`、SDK 自带的那一份，都没有就报错并提示怎么办。也可以在 `config.bat` 里把 `CLAUDE_BIN` 直接指到 `claude.exe`。
+3. 打开开关，二选一：
+   - 在 `config.bat` 里加 `set "RUNNER_MODE=sdk"`，重启服务；
+   - 或者不重启，用管理员账号调接口：`PUT /api/admin/settings`，内容 `{"runner_mode": "sdk"}`（管理后台的设置页暂时还没有这个选项）。接口设置优先于环境变量，对下一条消息立即生效。
+4. 启动时控制台会打印“运行方式：sdk（常驻会话）”；不可用时后面会跟原因。`GET /api/admin/settings` 里的 `sdk_available`、`sdk_error`、`sdk_clients`（当前常驻进程数）也能看到状态。
+
+**切回 `cli`：** 出任何问题都可以随时切回，不丢会话。
+
+- 用接口：`PUT /api/admin/settings`，内容 `{"runner_mode": "cli"}`，空闲的常驻进程会立刻关掉；
+- 或者把 `config.bat` 里的 `RUNNER_MODE` 去掉（或改成 `cli`）再重启。注意：如果之前用接口设过 `sdk`，接口设置优先，要先用接口改回 `cli`。
+- `sdk` 方式用不了的时候（包没装、找不到 `claude.exe`、启动失败），发消息会直接得到一条写明原因和“切回 cli”的错误，不会卡住。
+
+**常驻进程怎么管：**
+
+- 每个会话最多一个 `claude` 进程，空闲 10 分钟后自动关掉（`SDK_IDLE_SECONDS`，或接口里的 `sdk_idle_seconds`，30~86400 秒），下次发消息时重新启动并接上上下文。
+- 常驻进程总数默认不超过 8 个（`SDK_MAX_CLIENTS`），超了先关最久没用的空闲进程。同时在跑的任务数仍由“同时运行的任务数”（`MAX_CONCURRENT`）限制。
+- 点“停止”、任务超时、删除会话、改了这个会话的权限或引用了新的文件夹、服务退出时，对应的进程会被关掉（Windows 上连同它的子进程一起结束）。
+- `claude` 进程自己异常退出时，正在进行的那一轮按出错收尾，下一条消息会自动重新启动。
+- 权限确认和 Claude 的提问在 `sdk` 方式下不经过 `approval_mcp.py`，由服务进程直接处理（所以聊天里不会再出现“权限确认通道出了故障”的提示）；文件隔离的检查也在服务进程里做（规则和 `guard.py` 相同，出错按拒绝处理）。知识库、技能、读文档这些工具仍由 `approval_mcp.py` 提供。
+
+**在 Windows 台式机上启用前的验证清单**（建议找一个测试账号，先用官方模型或 DeepSeek 各走一遍；每一项不对就切回 `cli` 并把 `data/logs/claude_<会话id>.log` 留下）：
+
+1. `pip install -r requirements-sdk.txt` 能装上；启动时打印“运行方式：sdk（常驻会话）”且后面没有“不可用”。
+2. 发第一条消息能正常回答；同一会话再发一条，明显比第一条起得快。
+3. 回答是逐字出来的，思考和工具步骤显示正常，中文不乱码。
+4. 标准档：让 Claude 删一个测试文件（`rm`），弹出确认卡片；分别试同意、拒绝各一次。
+5. 严格档：让 Claude 改一个文件，弹确认。完全放行档：同样的操作不弹确认。
+6. 文件隔离：让 Claude 读另一个账号工作区里的文件、用 `cat` 读、在 D 盘根目录 `grep -r`，三个档位下都被拒绝（重点试完全放行档）。
+7. 让 Claude “用选项问我一个问题”：弹出选项卡片，回答一次、跳过一次。
+8. 知识库搜索（“在知识库里搜一下 XX”）、列出技能、用 `read_document` 读一个 Word 或 PDF，都能用。
+9. 跑一个长任务，中途点“停止”：界面显示“已停止”；任务管理器里没有残留的 `claude.exe`、`node.exe`、`bash.exe`，也没有多出来的 `python.exe`。之后再发消息能接着聊。
+10. 放着不动超过空闲时间（可以先把 `sdk_idle_seconds` 调成 60）：任务管理器里那个 `claude.exe` 消失；再发消息能接上之前的上下文。
+11. 关掉服务窗口：没有残留的 `claude.exe`。
+12. 找一个以前在 `cli` 方式下聊过的会话，切到 `sdk` 后接着聊，Claude 记得之前的内容；再切回 `cli` 也记得。
+13. 同时开几个会话发消息，超过并发上限的会排队；“用量”页里这些对话的 token 和费用有记录。
+14. 用 DeepSeek 时把 2~8 再走一遍。
+15. 如果服务不是从 `start.bat` 的窗口启动的（比如计划任务、`pythonw`），看每次启动 `claude` 时会不会闪出黑色的命令行窗口。
+
 ## 在台式机上安装
 
 1. 安装 [Python 3.10+](https://www.python.org/downloads/)，安装时勾选 “Add python.exe to PATH”。
