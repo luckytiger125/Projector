@@ -66,7 +66,7 @@ function SectionBar() {
         <div class="sec-pop">
           {item(null, "全部")}
           {item(0, "未分类")}
-          {sections.value.filter((s) => !s.archived).map((s) => item(s.id, s.name, s.session_count))}
+          {sections.value.filter((s) => !s.archived).map((s) => item(s.id, s.name, s.my_session_count ?? s.session_count))}
         </div>
       )}
     </div>

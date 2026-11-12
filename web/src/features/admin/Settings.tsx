@@ -1,5 +1,7 @@
-// 设置页签：权限档位（标准 / 严格）、同时运行的任务数、运行方式（cli / sdk）、标准档要确认的命令、严格档额外放行的命令。
-import { useState } from "preact/hooks";
+// 设置页签：权限档位（标准 / 严格）、同时运行的任务数、运行方式（cli / sdk）、标准档要确认的命令、严格档额外放行的命令、文档缓存。
+import { useEffect, useState } from "preact/hooks";
+import { api, post } from "../../lib/api";
+import { fsize, ftime } from "../../lib/format";
 import { Icon } from "../../lib/icons";
 import { saveSettings, settings } from "../../stores/admin";
 import type { AdminSettings } from "../../stores/admin";
@@ -102,6 +104,47 @@ function Runner({ st }: { st: AdminSettings }) {
   );
 }
 
+interface DocCacheInfo {
+  count: number; bytes: number; hits: number; last_used: number | null;
+  by_status: Record<string, number>; last_prune: number | null; max_bytes: number;
+}
+
+/** 文档缓存：Claude 读过的 Word / PDF / 表格解析成文字后存一份，下次不用重新解析。这里看占用、手动清理。 */
+function DocCache() {
+  const [info, setInfo] = useState<DocCacheInfo | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () => api<DocCacheInfo>("/api/admin/doc-cache").then((d) => { setInfo(d); setErr(""); }).catch((e) => setErr((e as Error).message));
+  useEffect(() => { void load(); }, []);
+  const prune = async () => {
+    if (!(await confirmBox({ title: "清理文档缓存", message: "删掉源文件已经不在的缓存；总量超过上限时，从最久没用的开始删。不影响原文件，被删的下次读到时会重新解析。", ok: "清理" }))) return;
+    setBusy(true);
+    try {
+      const r = await post<{ removed_rows: number; removed_orphans: number; freed_bytes: number }>("/api/admin/doc-cache/prune");
+      toast(r.removed_rows + r.removed_orphans ? `清掉 ${r.removed_rows + r.removed_orphans} 份，腾出 ${fsize(r.freed_bytes)}` : "没有需要清理的", "ok");
+      await load();
+    } catch (e) { toast((e as Error).message, "err"); }
+    setBusy(false);
+  };
+  const failed = info ? Object.entries(info.by_status).filter(([k]) => k !== "ok").reduce((n, [, v]) => n + v, 0) : 0;
+  return (
+    <div class="ad-card">
+      <h4 class="ad-h"><Icon name="file" size={16} />文档缓存</h4>
+      <div class="ad-desc">Claude 读过的 Word、PDF、表格会解析成文字存一份，同一个文件没改过就不用再解析。每 7 天自动清理一次。</div>
+      {err ? <div class="ad-note err" role="alert"><Icon name="alert" size={15} /><span>读不到缓存信息：{err}</span></div>
+        : !info ? <div class="ad-desc ad-sub">读取中…</div>
+        : (
+          <div class="ad-desc ad-sub">
+            现在有 {info.count} 份，占 {fsize(info.bytes)}（上限 {fsize(info.max_bytes)}），一共省了 {info.hits} 次解析
+            {failed ? `；其中 ${failed} 份是没读出文字的（扫描件或空文档）` : ""}。
+            上次清理：{info.last_prune ? ftime(info.last_prune) : "还没清理过"}。
+          </div>
+        )}
+      <div class="ad-acts"><button class="btn sm" type="button" disabled={busy || !info} onClick={() => void prune()}>{busy ? "清理中…" : "立即清理"}</button></div>
+    </div>
+  );
+}
+
 export function SettingsTab() {
   const st = settings.value;
   if (!st) return null;
@@ -125,6 +168,7 @@ export function SettingsTab() {
         <Conc key={st.max_concurrent} n={st.max_concurrent} />
       </div>
       {st.runner_mode !== undefined && <Runner st={st} />}
+      <DocCache />
       {st.perm_mode === "standard" && (
         <div class="ad-card">
           <h4 class="ad-h"><Icon name="alert" size={16} />标准档：仍然要确认的命令</h4>

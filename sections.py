@@ -109,12 +109,16 @@ def list_sections(user: dict, include_archived: bool = False) -> list[dict]:
         counts = db("SELECT section_id, COUNT(*) AS c FROM sessions WHERE section_id IS NOT NULL AND user_id=? "
                     "GROUP BY section_id", (user["id"],))
     sess_n = {r["section_id"]: r["c"] for r in counts}
+    # 左栏的会话列表只列自己的会话，所以另给一个“只数自己的”数字；管理员的 session_count 仍是全团队（后台用）
+    mine = {r["section_id"]: r["c"] for r in db(
+        "SELECT section_id, COUNT(*) AS c FROM sessions WHERE section_id IS NOT NULL AND user_id=? GROUP BY section_id",
+        (user["id"],))} if is_admin(user) else sess_n
     import kb   # 延迟 import，避免循环
     note_n: dict[str, int] = {}
     for n in kb.index().notes.values():
         if n["section"]:
             note_n[n["section"]] = note_n.get(n["section"], 0) + 1
-    return [{**_public(r), "session_count": sess_n.get(r["id"], 0), "note_count": note_n.get(r["name"], 0)}
+    return [{**_public(r), "session_count": sess_n.get(r["id"], 0), "my_session_count": mine.get(r["id"], 0), "note_count": note_n.get(r["name"], 0)}
             for r in rows]
 
 

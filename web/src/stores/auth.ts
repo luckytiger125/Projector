@@ -89,5 +89,7 @@ export async function bootstrapAuth(): Promise<User | null> {
 
 /** 把 /api/me 的最新内容合并进当前用户（SSE 出错时探测登录是否失效用） */
 export function refreshMe(): Promise<void> {
-  return api<User>("/api/me").then((u) => { me.value = { ...(me.value as User), ...u }; }).catch(() => {});
+  // 先补种一次 cookie：页面开了很久、cookie 过期的话，EventSource（只能靠 cookie）会一直连不上
+  return api("/api/session-cookie", { method: "POST" }).catch(() => {})
+    .then(() => api<User>("/api/me")).then((u) => { me.value = { ...(me.value as User), ...u }; }).catch(() => {});
 }

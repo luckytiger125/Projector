@@ -186,6 +186,11 @@ def test_cancel_endpoint_and_permissions(env, alice, admin, make_user):
     assert env.c.delete(url(sid, q1), headers=alice["headers"]).status_code == 404   # 已经取消过
     assert env.c.delete(url(sid, q2), headers=admin["headers"]).status_code == 200   # 管理员可以
     assert env.view(alice, sid)["session"]["queue"] == []
+    # 单独取消也留记录：谁取消的、原文是什么
+    notes = [m for m in env.view(alice, sid)["messages"] if m["role"] == "event" and m["meta"].get("queue_cancelled")]
+    assert len(notes) == 2
+    assert "爱丽丝" in notes[0]["content"] and notes[0]["content"].endswith("\nB")
+    assert "boss" in notes[1]["content"] and notes[1]["content"].endswith("\nC")
     env.finish(sid, "A")
     assert env.fake.order == ["A"]   # 取消掉的没有再开始
 
@@ -394,6 +399,17 @@ def test_recover_runs(env, alice):
     assert env.roles(alice, s_idle)[0] == "user"
     env.finish(s_idle, "Z")
     assert runner.queue_of(s_idle) == []
+
+
+def test_recover_runs_does_not_repeat_interrupted_notice(env, alice):
+    """上次恢复写完中断消息、还没来得及清 active_runs 就崩了：再恢复一次不重复写。"""
+    sid = env.new_session(alice)
+    store.db("INSERT INTO active_runs (session_id,user_id,started) VALUES (?,?,?)", (sid, alice["id"], 1.0))
+    runner.add_message(sid, "error", "服务重启，这一轮被中断了，请重新发送。", {"interrupted": True})
+    assert runner.recover_runs() == 1
+    errs = [m for m in env.view(alice, sid)["messages"] if m["role"] == "error"]
+    assert len(errs) == 1
+    assert store.db("SELECT COUNT(*) AS c FROM active_runs", one=True)["c"] == 0
 
 
 def test_recover_runs_for_deleted_session(alice):

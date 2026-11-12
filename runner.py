@@ -580,7 +580,10 @@ def recover_runs() -> int:
     for r in rows:
         sid = r["session_id"]
         if db("SELECT 1 FROM sessions WHERE id=?", (sid,), one=True):
-            add_message(sid, "error", "服务重启，这一轮被中断了，请重新发送。", {"interrupted": True})
+            # 上次恢复到一半又崩了的话，这条已经写过：最后一条消息就是它时不再重复
+            last = db("SELECT meta FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,), one=True)
+            if not (last and '"interrupted"' in (last["meta"] or "")):
+                add_message(sid, "error", "服务重启，这一轮被中断了，请重新发送。", {"interrupted": True})
         db("DELETE FROM active_runs WHERE session_id=?", (sid,))
         dropped = clear_queue(sid)
         if dropped and db("SELECT 1 FROM sessions WHERE id=?", (sid,), one=True):
@@ -677,10 +680,12 @@ async def stop_session(sid: str, user: dict = Depends(current_user)):
 @router.delete("/api/sessions/{sid}/queue/{qid}")
 async def cancel_queued(sid: str, qid: int, user: dict = Depends(current_user)):
     session_for(sid, user)   # 会话主人和管理员可以取消
-    if not db("SELECT 1 FROM turn_queue WHERE id=? AND session_id=?", (qid, sid), one=True):
+    row = db("SELECT text FROM turn_queue WHERE id=? AND session_id=?", (qid, sid), one=True)
+    if not row:
         raise HTTPException(404, "这条排队的消息已经开始或已被取消")
     db("DELETE FROM turn_queue WHERE id=?", (qid,))
-    push_session(sid)
+    # 和“停止”“服务重启”一样留一条记录，写明是谁取消的、原文是什么，免得消息悄悄消失
+    add_message(sid, "event", f"{user['display_name']} 取消了一条排队中的消息：\n{row['text']}", {"queue_cancelled": True})
     dispatch_queue()
     return {"ok": True}
 

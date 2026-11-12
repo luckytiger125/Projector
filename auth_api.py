@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 import files_api
+import store
 import sdk_runner
 from runner import (DEFAULT_ASK_CMDS, DEFAULT_BASH_ALLOW, RUNS, SAFE_BASH, dispatch_queue, max_concurrent, perm_mode,
                     runner_mode, sdk_idle_seconds)
@@ -64,6 +65,7 @@ def setup_admin(body: Credentials, request: Request, response: Response):
     db("INSERT INTO users (username, display_name, pw_hash, role, created) VALUES (?,?,?,?,?)",
        (username, body.display_name.strip() or username, hash_password(body.password), "admin", time.time()))
     adopt_orphans()
+    store.migrate_legacy()   # 历史语音会话归到第一个管理员名下：不用等下次重启
     u = db("SELECT * FROM users WHERE username=?", (username,), one=True)
     token = issue_token(u["id"])
     set_auth_cookie(response, token)
@@ -208,7 +210,8 @@ def admin_delete_user(uid: int, admin: dict = Depends(require_admin)):
         raise HTTPException(409, "这个用户还有任务在进行")
     ud = user_ws_dir(u, create=False)  # 删账号记录之前先定位工作区
     for s in db("SELECT id FROM sessions WHERE user_id=?", (uid,)):
-        db("DELETE FROM messages WHERE session_id=?", (s["id"],))
+        for table in ("messages", "turn_queue", "active_runs"):
+            db(f"DELETE FROM {table} WHERE session_id=?", (s["id"],))
     for sql in ("DELETE FROM sessions WHERE user_id=?", "DELETE FROM links WHERE user_id=?",
                 "DELETE FROM tokens WHERE user_id=?", "DELETE FROM skill_access WHERE user_id=?",
                 "DELETE FROM users WHERE id=?"):

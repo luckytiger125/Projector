@@ -80,6 +80,7 @@ function Banners() {
   const ls = links.value;
   return (
     <>
+      {s && s.source === "voice" && <div class="banner view"><Icon name="eye" size={16} />这是语音功能留下的历史记录，只能查看，不能继续对话。要接着聊请新建会话。</div>}
       {!mine && s && <div class="banner view"><Icon name="eye" size={16} />你在查看 <b>{s.owner}</b> 的会话，只能看。待确认的操作可以代为处理。</div>}
       {ls.length > 0 && s && (
         <div class="banner links">
@@ -99,12 +100,13 @@ function Banners() {
 export function Chat() {
   const asking = questions.value.length > 0;
   void asking;
+  const readonly = currentSess.value?.source === "voice";   // 历史语音会话：服务端不接受新消息，输入区不显示
   return (
     <section class="chat">
       <ChatHead />
       <Banners />
       <MessageList />
-      <Composer />
+      {!readonly && <Composer />}
     </section>
   );
 }
