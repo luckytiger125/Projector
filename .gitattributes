@@ -1,0 +1,5 @@
+# 构建产物：Windows 检出不改换行，内容哈希才稳定
+static/app/** -text
+# 前端源码统一 LF
+web/** text eol=lf
+web/package-lock.json text eol=lf

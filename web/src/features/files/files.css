@@ -1,0 +1,95 @@
+/* 文件库：目录列表 + 预览、回收站、拖拽提示、几个对话框里的小部件。骨架（.sheet / .ledger / .tabs）在 components/sheet.css。 */
+
+/* ── 列表 ── */
+.px .fx-ledger { table-layout: fixed; }
+.px .fx-ledger th:nth-child(2) { width: 92px; }
+.px .fx-ledger th:nth-child(3) { width: 112px; }
+.px .fx-ledger th:last-child { width: 108px; }
+.px .fx-ledger td.nmc { overflow: hidden; }
+.px .fx-ledger .nm { width: 100%; cursor: pointer; }
+.px .fx-ledger tbody tr { cursor: pointer; animation: fade var(--d-slow) both; }
+.px .fx-ledger .r .icon-btn { vertical-align: middle; }
+.px .fx-ledger .r .icon-btn.del:hover { color: var(--vermilion); }
+.px .fx-where { display: block; font-size: 11px; font-weight: 400; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; }
+.px .fx-crumb { display: inline-flex; align-items: center; gap: var(--s-1); }
+.px .fx-crumb .fx-sep { color: var(--ink-4); }
+.px .crumbs a.link { cursor: pointer; }
+.px .fx-sub { font-size: var(--t-13); color: var(--ink-3); }
+.px .fx-list { min-width: 0; }
+.px .fx-pickbar { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-6); background: var(--navy-soft); font-size: var(--t-13); border-bottom: 1px solid var(--hair); }
+.px .fx-pickbar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.px .fx-prog { position: relative; height: 26px; background: var(--paper-1); border-bottom: 1px solid var(--hair); overflow: hidden; }
+.px .fx-prog i { position: absolute; inset: 0 auto 0 0; background: var(--navy-soft); transition: width var(--d-slow) var(--ease); }
+.px .fx-prog span { position: relative; display: block; font-size: var(--t-12); line-height: 26px; padding: 0 var(--s-6); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.px .fx-none { text-align: center; padding: var(--s-8) 0; }
+.px .fx-trash th:nth-child(2) { width: 20%; }
+.px .fx-trash th:nth-child(3) { width: 200px; }
+.px .fx-trash th:nth-child(4) { width: 76px; }
+.px .fx-trash th:nth-child(5) { width: 88px; }
+.px .fx-trash th:last-child { width: 132px; }
+.px .fx-trash td { overflow: hidden; }
+.px .fx-trash td.num { white-space: normal; }
+.px .fx-where-c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 预览 ── */
+.px .fx-phead { margin: 0; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--hair-strong); flex: none; gap: var(--s-2); }
+.px .fx-pname { flex: 0 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-14); }
+.px .fx-phead .btn.ghost, .px .fx-phead .btn { flex: none; }
+.px .fx-phead .sp { display: none; }
+.px .fx-content { flex: 1; min-height: 0; overflow: auto; position: relative; display: flex; flex-direction: column; }
+.px .fx-content > * { flex: none; }
+.px .fx-content > .fx-frame { flex: 1; }
+.px .fx-pad { padding: var(--s-3) var(--s-4) 0; margin: 0; }
+.px .fx-center { color: var(--ink-3); text-align: center; padding: 14% var(--s-5) 0; }
+.px .fx-center p { margin-top: var(--s-3); }
+.px .fx-center .btn { margin-top: var(--s-3); }
+.px .fx-big { width: 64px; height: 64px; border-radius: var(--r-2); display: grid; place-items: center; margin: 0 auto var(--s-4); background: var(--navy-soft); color: var(--ink-3); }
+.px .fx-nm { display: block; color: var(--ink-1); word-break: break-all; margin-bottom: var(--s-1); }
+.px .fx-banner { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; padding: var(--s-2) var(--s-4); background: var(--navy-soft); border-bottom: 1px solid var(--hair); font-size: var(--t-13); }
+.px .fx-banner > span { flex: 1; min-width: 0; }
+.px .fx-pre { margin: 0; padding: var(--s-4); font: 12.5px/1.6 var(--f-mono); white-space: pre-wrap; word-break: break-all; }
+.px .fx-md { padding: var(--s-5) var(--s-6); }
+.px .fx-img { max-width: calc(100% - 32px); display: block; margin: var(--s-4) auto; border-radius: var(--r-1); box-shadow: var(--shadow-1); }
+.px .fx-frame { border: 0; width: 100%; height: 100%; min-height: 60vh; display: block; background: #fff; }
+.px .fx-av { display: block; max-width: calc(100% - 32px); margin: var(--s-6) auto; }
+.px .fx-docx .docx-wrapper { background: transparent; padding: var(--s-4); }
+.px .fx-sheet-tabs { display: flex; gap: 2px; flex-wrap: wrap; padding: var(--s-2) var(--s-3) 0; border-bottom: 1px solid var(--hair-strong); position: sticky; top: 0; background: var(--paper-2); z-index: 1; }
+.px .fx-sheet-tabs button { padding: 4px var(--s-3); font-size: var(--t-12); border: 1px solid transparent; border-bottom: 0; border-radius: var(--r-1) var(--r-1) 0 0; color: var(--ink-3); }
+.px .fx-sheet-tabs button.on { color: var(--ink-1); font-weight: 600; background: var(--paper-0); border-color: var(--hair-strong); }
+.px .fx-sheet-body table { border-collapse: collapse; font-size: var(--t-13); margin: var(--s-3); }
+.px .fx-sheet-body td, .px .fx-sheet-body th { border: 1px solid var(--hair); padding: 3px var(--s-2); white-space: nowrap; }
+
+/* ── 拖文件进窗口 ── */
+.px .dropzone { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; background: rgba(19, 31, 49, .34); pointer-events: none; animation: fade var(--d-slow) both; }
+.px .dz { border: 2px dashed var(--navy); border-radius: var(--r-2); padding: var(--s-12) var(--s-16); max-width: 92vw; text-align: center; background: var(--paper-2); box-shadow: var(--shadow-2); }
+.px .dz-t { font: 700 var(--t-20)/var(--lh-tight) var(--f-serif); margin-top: var(--s-3); }
+.px .dz p { color: var(--ink-3); font-size: var(--t-13); margin-top: var(--s-2); word-break: break-all; }
+
+/* ── 对话框里的小部件 ── */
+.px .dlg-body p + p, .px .dlg-body p + label.chk { margin-top: var(--s-3); }
+.px .dlg-body b { color: var(--ink-1); }
+.px .fx-del ul { margin: var(--s-2) 0 0; padding-left: 1.2em; max-height: 30vh; overflow-y: auto; list-style: none; padding-left: 0; }
+.px .fx-del li { word-break: break-all; }
+.px .fx-card { border: 1px solid var(--hair-strong); border-radius: var(--r-1); padding: var(--s-3) var(--s-4); margin-top: var(--s-3); }
+.px .fx-card h5 { display: flex; align-items: center; gap: var(--s-2); font-weight: 600; color: var(--ink-1); }
+.px .fx-chg { display: flex; align-items: center; gap: var(--s-2); padding: 5px 0; border-bottom: 1px solid var(--hair); }
+.px .fx-chg .fx-fp { flex: 1; min-width: 0; cursor: pointer; color: var(--navy); font-family: var(--f-mono); font-size: var(--t-13); word-break: break-all; border-bottom: 1px dotted var(--hair-strong); }
+.px .fx-chg .fx-fp:hover { border-bottom-color: var(--navy); }
+.px .fx-chg .btn { height: 26px; padding: 0 var(--s-2); }
+
+@media (max-width: 720px) {
+  .px .pane.fx-list { padding: var(--s-3) var(--s-4) var(--s-6); }
+  .px .fx-pickbar { padding: var(--s-2) var(--s-4); }
+  .px .fx-prog span { padding: 0 var(--s-4); }
+  .px .fx-ledger { table-layout: auto; }
+  .px .fx-ledger td.nmc { overflow: visible; }
+  .px .fx-ledger tbody tr { animation: none; }
+  .px .fx-ledger .r { white-space: nowrap; }
+  .px .fx-phead { padding: var(--s-2) var(--s-3); }
+  .px .fx-phead .btn.ghost { padding: 0 var(--s-2); }
+  .px .fx-md { padding: var(--s-4); }
+  .px .dz { padding: var(--s-8) var(--s-6); }
+  .px .fx-where-c { white-space: normal; }
+  .px .fx-trash tr { padding-right: 136px; }
+  .px .fx-trash td.num { white-space: normal; }
+}

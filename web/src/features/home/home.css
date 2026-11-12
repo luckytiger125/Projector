@@ -1,0 +1,23 @@
+/* 值班板。拆自 docs/design/mock.css */
+/* ── 值班板 ── */
+.px .board { overflow-y: auto; padding: var(--s-12) var(--s-12) var(--s-10); }
+.px .masthead { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s-10); align-items: end; padding-bottom: var(--s-6); border-bottom: 2px solid var(--rule); }
+.px .masthead h1 { font: 700 var(--t-40)/1.2 var(--f-serif); letter-spacing: .02em; margin: var(--s-3) 0 var(--s-2); }
+.px .masthead .sub { color: var(--ink-2); font-size: var(--t-16); }
+.px .facts { display: grid; grid-template-columns: repeat(2, auto); gap: 2px var(--s-8); font-size: var(--t-12); }
+.px .facts div { display: flex; gap: var(--s-3); justify-content: space-between; min-width: 148px; border-bottom: 1px dotted var(--hair-strong); padding: 2px 0; }
+.px .facts dt { color: var(--ink-3); letter-spacing: .08em; }
+.px .facts dd { font: 12px var(--f-mono), var(--f-sans); color: var(--ink-1); }
+.px .cols { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: var(--s-8); margin-top: var(--s-8); }
+.px .sec-h { display: flex; align-items: baseline; gap: var(--s-3); padding-bottom: var(--s-2); border-bottom: 1px solid var(--hair-strong); margin-bottom: var(--s-3); }
+.px .sec-h .n { font: 600 var(--t-12) var(--f-mono); color: var(--vermilion); }
+.px .sec-h .t { font: 700 var(--t-16) var(--f-serif); letter-spacing: .12em; }
+.px .sec-h .c { margin-left: auto; font: var(--t-12) var(--f-mono); color: var(--ink-3); }
+.px .dcard { display: block; background: var(--paper-2); border: 1px solid var(--hair); border-radius: var(--r-1); padding: var(--s-3) var(--s-4); margin-bottom: var(--s-2); cursor: pointer; transition: border-color var(--d-fast), transform var(--d-fast) var(--ease), box-shadow var(--d-fast); }
+.px .dcard:hover { border-color: var(--ink-1); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+.px .dcard.todo { border-top: 2px solid var(--vermilion); }
+.px .dcard h4 { font: 600 var(--t-14)/1.5 var(--f-sans); display: flex; align-items: center; gap: var(--s-2); }
+.px .dcard h4 span.t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.px .dcard p { font-size: var(--t-13); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.px .dcard .ft { display: flex; justify-content: space-between; margin-top: var(--s-1); font: 11px var(--f-mono); color: var(--ink-3); }
+.px .empty { padding: var(--s-6) 0; color: var(--ink-3); font-size: var(--t-13); }

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>样稿 · 知识库笔记</title>
+<link rel="stylesheet" href="mock.css">
+<script src="shell.js"></script>
+</head>
+<body>
+<div class="app l2">
+  <script>shell({ nav: "kb" })</script>
+  <main class="main">
+    <div class="veil">
+      <section class="sheet">
+        <header class="sheet-head">
+          <button class="icon-btn m-back" title="返回"><span class="ic l i-back"></span></button>
+          <div class="ttl">
+            <div class="kicker"><span>大家做过的事，都记在这里</span></div>
+            <h3>知识库</h3>
+          </div>
+          <button class="btn sm">整理重要文件</button>
+          <button class="btn primary sm"><span class="ic s i-plus"></span>新建笔记</button>
+          <button class="icon-btn x" title="关闭"><span class="ic i-x"></span></button>
+        </header>
+        <div class="sheet-bar">
+          <nav class="tabs">
+            <a>首页</a>
+            <a class="on">笔记</a>
+            <a>关系图谱</a>
+          </nav>
+          <label class="searchbox"><span class="ic s i-search"></span><input placeholder="搜索经验、文件卡片、主题…"></label>
+        </div>
+        <div class="sheet-body m-detail">
+          <aside class="pane narrow">
+            <div class="pills"><button class="pill on">全部</button><button class="pill">周报</button><button class="pill">未分类</button></div>
+            <a class="note-row on"><h5>周报汇总的固定做法</h5><p>经验 · 王敏 · 今天</p></a>
+            <a class="note-row"><h5>2026 年办公用品采购合同</h5><p>文件卡片 · 今天</p></a>
+            <a class="note-row"><h5>发文格式要求</h5><p>经验 · 李强 · 3 天前</p></a>
+            <a class="note-row"><h5>差旅报销流程</h5><p>经验 · 王敏 · 5 天前</p></a>
+            <a class="note-row"><h5>三季度经费使用表</h5><p>文件卡片 · <span style="color:var(--warn)">文件改过，卡片可能过时</span></p></a>
+            <a class="note-row"><h5>各科室联系人</h5><p>经验 · 王敏 · 11-02</p></a>
+          </aside>
+          <div class="pane">
+            <article class="article">
+              <div class="kicker"><span>分区 · 周报</span></div>
+              <h1>周报汇总的固定做法</h1>
+              <div class="meta"><span class="tag">经验</span><span>王敏 创建</span><span>今天 10:05</span><span style="flex:1"></span><button class="btn ghost sm">修改</button><button class="btn ghost sm">删除</button></div>
+              <div class="md">
+                <p>每周一上午汇总上一周的科室周报。做法固定，交给 Claude 时照这个顺序来。</p>
+                <h3>步骤</h3>
+                <ul>
+                  <li>先对照 <a class="wl">各科室联系人</a> 核对报送名单，缺报的单列一栏“未报送”。</li>
+                  <li>按“重点工作、存在问题、下周计划”三栏合并，每个科室不超过三条。</li>
+                  <li>经费数字以 <a class="wl">三季度经费使用表</a> 为准，周报里写的不一致时标出来。</li>
+                </ul>
+                <h3>注意</h3>
+                <p>正式稿要套用 <a class="wl">发文格式要求</a>，文件名写成 <code>第N周周报汇总.docx</code>。</p>
+              </div>
+              <div class="backlinks">
+                <h6>提到这条的笔记 2</h6>
+                <a class="note-row"><h5>发文格式要求</h5><p>…周报汇总按 [[周报汇总的固定做法]] 出初稿后再排版…</p></a>
+                <a class="note-row"><h5>各科室联系人</h5><p>…缺报时找对应联系人，见 [[周报汇总的固定做法]]…</p></a>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>样稿 · 管理后台</title>
+<link rel="stylesheet" href="mock.css">
+<script src="shell.js"></script>
+</head>
+<body>
+<div class="app l2">
+  <script>shell({ nav: "admin" })</script>
+  <main class="main">
+    <div class="veil">
+      <section class="sheet">
+        <header class="sheet-head">
+          <button class="icon-btn m-back" title="返回"><span class="ic l i-back"></span></button>
+          <div class="ttl">
+            <div class="kicker"><span>Projector · 综合部工作台</span></div>
+            <h3>管理后台</h3>
+          </div>
+          <button class="icon-btn x" title="关闭"><span class="ic i-x"></span></button>
+        </header>
+        <div class="sheet-bar">
+          <nav class="tabs">
+            <a class="on">用户</a>
+            <a>聊天记录</a>
+            <a>技能库</a>
+            <a>待审核 <sup>2</sup></a>
+            <a>文件记录</a>
+            <a>用量</a>
+            <a>分区</a>
+            <a>设置</a>
+          </nav>
+        </div>
+        <div class="sheet-body">
+          <div class="pane">
+            <p class="note-hint">同事只能登录、不能注册。把用户名和初始密码告诉他们，登录后可以自己改密码、换头像。</p>
+            <div style="display:flex;gap:var(--s-2);flex-wrap:wrap;margin-bottom:var(--s-5);padding:var(--s-3);background:var(--paper-1);border:1px solid var(--hair);border-radius:var(--r-1)">
+              <input class="input" style="flex:1 1 140px" placeholder="用户名">
+              <input class="input" style="flex:1 1 140px" placeholder="显示的名字（可选）">
+              <input class="input" style="flex:1 1 140px" placeholder="密码">
+              <button class="btn primary" style="height:var(--hit)">创建</button>
+            </div>
+            <table class="ledger">
+              <thead><tr><th>用户</th><th>角色</th><th>状态</th><th>最近登录</th><th>完全放行</th><th></th></tr></thead>
+              <tbody>
+                <tr><td class="nmc"><div class="nm"><span class="ava" style="width:28px;height:28px;font-size:13px">王</span><span>王敏 <span class="mono" style="color:var(--ink-3);font-size:12px">admin</span></span></div></td><td class="sub"><span class="tag">管理员</span></td><td class="sub"><span class="tag ok">有任务在进行</span></td><td class="num" data-l="最近登录">今天 08:01</td><td data-l="完全放行"><label class="switch"><i></i></label></td><td class="r"><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+                <tr><td class="nmc"><div class="nm"><span class="ava" style="width:28px;height:28px;font-size:13px;background:var(--ok)">李</span><span>李强 <span class="mono" style="color:var(--ink-3);font-size:12px">liqiang</span></span></div></td><td class="sub">普通用户</td><td class="sub"><span class="tag red">有待确认</span></td><td class="num" data-l="最近登录">今天 09:12</td><td data-l="完全放行"><label class="switch"><i></i></label></td><td class="r"><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+                <tr><td class="nmc"><div class="nm"><span class="ava" style="width:28px;height:28px;font-size:13px;background:var(--warn)">赵</span><span>赵蕾 <span class="mono" style="color:var(--ink-3);font-size:12px">zhaolei</span></span></div></td><td class="sub">普通用户</td><td class="sub">—</td><td class="num" data-l="最近登录">昨天 17:40</td><td data-l="完全放行"><label class="switch"><i></i></label></td><td class="r"><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+                <tr><td class="nmc"><div class="nm"><span class="ava" style="width:28px;height:28px;font-size:13px;background:var(--ink-4)">孙</span><span style="color:var(--ink-3)">孙涛 <span class="mono" style="font-size:12px">suntao</span></span></div></td><td class="sub">普通用户</td><td class="sub"><span class="tag">停用</span></td><td class="num" data-l="最近登录">10-21 09:03</td><td data-l="完全放行"><label class="switch"><i></i></label></td><td class="r"><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -7,14 +7,16 @@ on:
       - "**/*.py"
       - "tests/**"
       - "requirements*.txt"
-      - "static/*.js"
+      - "web/**"
+      - "static/**"
       - ".github/workflows/server-tests.yml"
   pull_request:
     paths:
       - "**/*.py"
       - "tests/**"
       - "requirements*.txt"
-      - "static/*.js"
+      - "web/**"
+      - "static/**"
       - ".github/workflows/server-tests.yml"
   workflow_dispatch:
 
@@ -57,15 +59,34 @@ jobs:
       # 测试通过 tests/conftest.py 里的环境变量自我隔离，不需要密钥或外部服务
       - run: python -m pytest -q
 
-  js-syntax:
-    name: 前端 JS 语法检查
+  frontend:
+    name: 前端类型检查和构建
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
 
-      - name: node --check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run check
+
+      - run: npm run build
+
+      # 提交进仓库的构建产物必须和源码一致
+      - name: 检查 static/app 和源码一致
+        working-directory: .
         run: |
-          for f in static/app.js static/admin.js static/kb.js static/ui.js; do
-            echo "检查 $f"
-            node --check "$f"
-          done
+          if [ -n "$(git status --porcelain -- static/app)" ]; then
+            git status --short -- static/app
+            git diff --stat -- static/app
+            echo "::error::static/app 和 web/ 源码对不上：改了 web/ 之后要重新 npm run build 并提交 static/app"
+            exit 1
+          fi

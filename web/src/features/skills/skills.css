@@ -1,0 +1,92 @@
+/* 技能：列表、详情、版本记录、文件查看器。骨架（.sheet / .ledger / .tabs）在 components/sheet.css。 */
+
+.px .sheet.sk { width: min(1040px, 100%); }
+.px .sk .pane > .sk-h:first-child { margin-top: 0; }
+.px .sk-h svg { align-self: center; color: var(--ink-3); }
+.px .sk-hint { font: 400 var(--t-12) var(--f-sans); letter-spacing: 0; color: var(--ink-3); }
+.px .vtag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; font: 600 11px var(--f-mono); border-radius: var(--r-1); background: var(--navy); color: var(--on-navy); flex: none; }
+.px .sk-sep { color: var(--ink-4); }
+
+/* 列表 */
+.px .sk-ledger { table-layout: fixed; }
+.px .sk-ledger th:first-child { width: 34%; }
+.px .sk-ledger tbody tr { animation: fade var(--d-slow) both; }
+.px .sk-ledger td.nmc { overflow: hidden; }
+.px .sk-ledger .nm { width: 100%; }
+.px .sk-ledger .nm .vtag { margin-left: var(--s-1); }
+.px .sk-ledger button.nm { cursor: pointer; }
+.px .sk-ledger tbody tr:has(button.nm) { cursor: pointer; }
+.px .sk-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.px .sk-subs th:first-child { width: 18%; }
+.px .sk-subs th:nth-child(2) { width: 88px; }
+.px .sk-subs th:nth-child(3) { width: 26%; }
+.px .sk-subs th:nth-child(4) { width: 136px; }
+.px .sk-subs th:nth-child(5) { width: 18%; }
+.px .sk .empty { padding: var(--s-3) 0; }
+
+/* 上传 */
+.px .sk-up { display: flex; flex-direction: column; gap: var(--s-2); }
+.px .sk-up-btns { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.px .sk-msg { min-height: 1.4em; color: var(--vermilion); font-size: var(--t-13); }
+.px .sk-msg.busy { color: var(--ink-3); }
+.px .sk-box { margin-bottom: var(--s-4); padding: var(--s-3) var(--s-4); background: var(--paper-1); border: 1px solid var(--hair); border-radius: var(--r-1); }
+.px .sk-box .note-hint { margin: var(--s-2) 0 0; }
+.px .note-hint code { font-family: var(--f-mono); color: var(--ink-1); }
+
+/* 详情 */
+.px .sk-head { display: flex; gap: var(--s-4); align-items: flex-start; margin: var(--s-2) 0 var(--s-4); }
+.px .sk-head .big { width: 52px; height: 52px; border-radius: var(--r-2); display: grid; place-items: center; background: var(--navy-soft); color: var(--navy); flex: none; }
+.px .sk-head h3 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); font: 700 var(--t-20)/var(--lh-tight) var(--f-serif); }
+.px .sk-head p { margin-top: var(--s-1); color: var(--ink-2); font-size: var(--t-13); }
+.px .sk-acts { display: flex; gap: var(--s-2); flex-wrap: wrap; margin-bottom: var(--s-4); }
+.px .sk-warn { display: flex; gap: var(--s-2); align-items: flex-start; padding: var(--s-3) var(--s-4); margin-bottom: var(--s-2); background: var(--warn-soft); border: 1px solid var(--warn); border-radius: var(--r-1); color: var(--ink-1); font-size: var(--t-13); }
+.px .sk-warn svg { flex: none; margin-top: 3px; color: var(--warn); }
+.px .sk-vers { table-layout: fixed; }
+.px .sk-vers th:nth-child(1) { width: 104px; }
+.px .sk-vers th:nth-child(3) { width: 15%; }
+.px .sk-vers th:nth-child(4) { width: 136px; }
+.px .sk-vers th:nth-child(5) { width: 15%; }
+.px .sk-vers th:last-child { width: 244px; }
+.px .sk-vers td.sub { white-space: nowrap; text-overflow: ellipsis; }
+.px .sk-vers tr.on td { background: var(--navy-soft); }
+.px .sk-vers td { overflow: hidden; }
+.px .sk-vers td.r { overflow: visible; }
+.px .sk-vers .sk-log { white-space: normal; word-break: break-word; line-height: 1.5; padding: var(--s-2) var(--s-3) var(--s-2) 0; }
+.px .sk-who { display: inline-flex; align-items: center; gap: var(--s-2); min-width: 0; }
+.px .sk-who > span:first-child { display: inline-flex; flex: none; }
+.px .sk-who .ava { box-shadow: none; background: none; border-radius: 50%; }
+
+/* 文件查看器（对话框里） */
+.px .skf { min-width: 0; }
+.px .skf .note-hint { margin-bottom: var(--s-2); }
+.px .skf-removed { font-size: var(--t-13); color: var(--ink-3); margin-bottom: var(--s-2); }
+.px .skf-box { display: flex; gap: var(--s-3); min-height: 320px; max-height: 56vh; }
+.px .skf-list { list-style: none; padding: 0; width: 250px; flex: none; overflow-y: auto; border: 1px solid var(--hair); border-radius: var(--r-1); background: var(--paper-1); }
+.px .skf-list button { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-1) var(--s-2); width: 100%; padding: 6px var(--s-3); text-align: left; font-size: var(--t-13); border-bottom: 1px solid var(--hair); }
+.px .skf-list button:hover { background: var(--navy-soft); }
+.px .skf-list li.on button { background: var(--navy); color: var(--on-navy); }
+.px .skf-list .tag { height: 18px; font-size: 11px; }
+.px .skf-list .p { word-break: break-all; }
+.px .skf-list .sz { font: 11px var(--f-mono); opacity: .65; }
+.px .skf-pre { flex: 1; min-width: 0; margin: 0; padding: var(--s-3) var(--s-4); background: var(--paper-1); border: 1px solid var(--hair); border-radius: var(--r-1); font: 12px/1.6 var(--f-mono); white-space: pre-wrap; word-break: break-all; overflow: auto; }
+
+@media (max-width: 720px) {
+  .px .sk-ledger { table-layout: auto; }
+  .px .sk-ledger tbody tr { animation: none; }
+  .px .sk-ledger tr { padding-right: 0; }
+  .px .sk-ledger td.nmc { overflow: visible; }
+  .px .sk-ledger td:empty { display: none; }
+  .px .sk-desc { flex: 0 0 100%; white-space: normal; overflow: visible; text-overflow: clip; color: var(--ink-3); }
+  .px .sk-vers td { overflow: visible; }
+  .px .sk-vers td.sub { white-space: normal; }
+  .px .sk-vers tr.on td { background: none; }
+  .px .sk-vers tr { padding-right: 56px; }
+  .px .sk-vers .sk-log { flex: 0 0 100%; padding: 0; color: var(--ink-1); font-size: var(--t-13); }
+  .px .sk-vers td.r { display: flex; flex-direction: column; gap: var(--s-1); }
+  .px .sk-vers td.r .btn { width: var(--hit-touch); height: var(--hit-touch); padding: 0; }
+  .px .sk-vers td.r .btn .lb { display: none; }
+  .px .sk-head { margin-top: 0; }
+  .px .skf-box { flex-direction: column; max-height: 62vh; min-height: 0; }
+  .px .skf-list { width: 100%; max-height: 28vh; }
+  .px .skf-pre { min-height: 160px; }
+}

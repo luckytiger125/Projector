@@ -1,0 +1,64 @@
+/* 账户：我的用量、在手机上打开、更换头像、修改密码、设置会话分区。骨架在 components/sheet.css。 */
+
+.px .sheet.ac { width: min(820px, 100%); }
+.px .sheet.ac.compact { width: min(600px, 100%); height: auto; max-height: min(760px, 100%); }
+
+/* 用量 */
+.px .ac-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--hair-strong); border-top: 2px solid var(--rule); border-radius: var(--r-1); background: var(--paper-2); margin-bottom: var(--s-2); }
+.px .ac-stat { padding: var(--s-4); border-left: 1px solid var(--hair); min-width: 0; }
+.px .ac-stat:first-child { border-left: 0; }
+.px .ac-stat .v { font: 700 var(--t-28)/1.1 var(--f-serif); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+.px .ac-stat:last-child .v { font: 600 var(--t-14)/1.6 var(--f-mono); padding-top: var(--s-2); }
+.px .ac-stat .l { margin-top: var(--s-1); font-size: var(--t-12); letter-spacing: .08em; color: var(--ink-3); }
+.px .ac-ledger { table-layout: fixed; }
+.px .ac-ledger th:not(:first-child) { width: 17%; }
+.px .ac-turns th:first-child { width: 22%; }
+.px .ac-turns th:nth-child(2) { width: auto; }
+.px .ac-turns th:nth-child(n+3) { width: 12%; }
+.px .ac-turns th:last-child { width: 17%; }
+.px .ac-ledger td { overflow: hidden; text-overflow: ellipsis; }
+.px .ac-pv { white-space: nowrap; color: var(--ink-2); }
+.px .ac-foot { margin: var(--s-4) 0 0; }
+
+/* 二维码 */
+.px .ac-qr { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.px .ac-qrcard { position: relative; padding: var(--s-4); background: var(--paper-2); border: 1px solid var(--hair-strong); border-top: 3px solid var(--navy); border-radius: var(--r-2); box-shadow: var(--shadow-1); }
+.px .ac-qrcard svg { display: block; width: 228px; height: 228px; }
+.px .ac-qrcard .ac-orb { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; place-items: center; }
+.px .ac-qrurl { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-4); font: 500 var(--t-14) var(--f-mono); word-break: break-all; }
+.px .ac-seg { display: inline-flex; flex-wrap: wrap; justify-content: center; margin-top: var(--s-3); border: 1px solid var(--hair-strong); border-radius: var(--r-1); background: var(--paper-2); }
+.px .ac-seg button { padding: 4px var(--s-3); font: 500 var(--t-12) var(--f-mono); color: var(--ink-3); border-left: 1px solid var(--hair); }
+.px .ac-seg button:first-child { border-left: 0; }
+.px .ac-seg button.on { background: var(--navy); color: var(--on-navy); }
+.px .ac-wifi { margin-top: var(--s-4); font-size: var(--t-13); color: var(--ink-2); }
+.px .ac-wifi b { color: var(--ink-1); }
+.px .ac-steps { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); margin-top: var(--s-4); width: 100%; text-align: left; }
+.px .ac-steps div { padding: var(--s-3) var(--s-4); background: var(--paper-1); border: 1px solid var(--hair); border-radius: var(--r-1); font-size: var(--t-12); color: var(--ink-2); }
+.px .ac-steps b { display: block; margin-bottom: 2px; font-size: var(--t-13); color: var(--ink-1); }
+
+/* 对话框里的小部件 */
+.px .ac-ava-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-3); padding-bottom: var(--s-2); }
+.px .ac-ava { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: var(--s-3) var(--s-1) var(--s-2); border: 1px solid transparent; border-radius: var(--r-2); font-size: var(--t-13); color: var(--ink-2); animation: lift var(--d-slow) var(--ease) both; transition: background var(--d-fast), transform var(--d-fast) var(--ease); }
+.px .ac-ava:hover { background: var(--navy-soft); transform: translateY(-2px); }
+.px .ac-ava.on { border-color: var(--navy); background: var(--navy-soft); color: var(--ink-1); font-weight: 600; }
+.px .ac-ava > span { display: inline-flex; }
+.px .ac-ava .ava { box-shadow: none; background: none; border-radius: 50%; }
+.px .ac-form { display: flex; flex-direction: column; gap: var(--s-2); }
+.px .ac-form .input { margin-top: 0; }
+.px .ac-hint { font-size: var(--t-12); color: var(--ink-3); margin-top: var(--s-1); }
+
+@media (max-width: 720px) {
+  .px .sheet.ac.compact { width: 100%; height: 100%; max-height: none; }
+  .px .ac-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .px .ac-stat { border-left: 0; border-top: 1px solid var(--hair); }
+  .px .ac-stat:nth-child(2n) { border-left: 1px solid var(--hair); }
+  .px .ac-stat:nth-child(-n+2) { border-top: 0; }
+  .px .ac-stat:last-child { grid-column: 1 / -1; border-left: 0; }
+  .px .ac-ledger { table-layout: auto; }
+  .px .ac-ledger tr { padding-right: 0; }
+  .px .ac-ledger td { overflow: visible; text-overflow: clip; }
+  .px .ac-pv { flex: 0 0 100%; white-space: normal; color: var(--ink-3); }
+  .px .ac-steps { grid-template-columns: 1fr; }
+  .px .ac-qrcard svg { width: min(228px, 60vw); height: min(228px, 60vw); }
+  .px .ac-ava-grid { gap: var(--s-1); }
+}

@@ -51,6 +51,9 @@ jobs:
         working-directory: .
         shell: bash
         run: |
+          # 前端产物是提交在 static/app 里的（台式机不装 Node）。打包前确认首页引用的文件都在，缺了就不发版
+          test -f static/app/index.html
+          for f in $(grep -o '/static/app/assets/[^"]*' static/app/index.html); do test -f ".$f" || { echo "缺少前端产物：$f"; exit 1; }; done
           git archive --format=zip --prefix=Projector-server/ -o "Projector-server-${GITHUB_REF_NAME}.zip" HEAD \
             ':(glob)*.py' requirements.txt static \
             install.bat start.bat config.example.bat README.md

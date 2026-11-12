@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>样稿 · 文件库</title>
+<link rel="stylesheet" href="mock.css">
+<script src="shell.js"></script>
+</head>
+<body>
+<div class="app l2">
+  <script>shell({ nav: "files" })</script>
+  <main class="main">
+    <div class="veil">
+      <section class="sheet">
+        <header class="sheet-head">
+          <button class="icon-btn m-back" title="返回"><span class="ic l i-back"></span></button>
+          <div class="ttl">
+            <div class="kicker"><span>文件库</span></div>
+            <h3>我的文件</h3>
+          </div>
+          <button class="btn sm"><span class="ic s i-folder"></span>新建文件夹</button>
+          <button class="btn primary sm"><span class="ic s i-up"></span>上传文件</button>
+          <button class="icon-btn x" title="关闭"><span class="ic i-x"></span></button>
+        </header>
+        <div class="sheet-bar">
+          <nav class="tabs">
+            <a class="on">我的文件</a>
+            <a>公共文件库</a>
+            <a>回收站</a>
+          </nav>
+          <label class="searchbox"><span class="ic s i-search"></span><input placeholder="搜索文件名…"></label>
+        </div>
+        <div class="sheet-body">
+          <div class="pane">
+            <div class="crumbs">
+              <a class="link">我的文件</a><span class="ic s i-chev"></span><a class="link">周报</a><span class="ic s i-chev"></span><b>第45周</b>
+              <span class="sp"></span>
+              <span class="tag">仅自己可见</span>
+              <button class="btn ghost sm">引用此文件夹</button>
+              <button class="btn ghost sm"><span class="ic s i-book"></span>整理进知识库</button>
+            </div>
+            <table class="ledger">
+              <thead><tr><th>名称</th><th>大小</th><th>修改时间</th><th></th></tr></thead>
+              <tbody>
+                <tr><td class="nmc"><div class="nm"><span class="ic i-folder"></span><span>原件</span></div></td><td class="num sub">6 项</td><td class="num sub">11-10 16:20</td><td class="r"><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+                <tr class="on"><td class="nmc"><div class="nm"><span class="ic i-file"></span><span>汇总.md</span><span class="tag ok">新增</span></div></td><td class="num sub">4.2 KB</td><td class="num sub">今天 10:33</td><td class="r"><button class="icon-btn" title="下载"><span class="ic i-dl"></span></button><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+                <tr><td class="nmc"><div class="nm"><span class="ic i-file"></span><span>办公室.docx</span></div></td><td class="num sub">38 KB</td><td class="num sub">11-10 15:02</td><td class="r"><button class="icon-btn" title="下载"><span class="ic i-dl"></span></button><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+                <tr><td class="nmc"><div class="nm"><span class="ic i-file"></span><span>财务科.docx</span></div></td><td class="num sub">41 KB</td><td class="num sub">11-10 14:48</td><td class="r"><button class="icon-btn" title="下载"><span class="ic i-dl"></span></button><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+                <tr><td class="nmc"><div class="nm"><span class="ic i-file"></span><span>三季度经费使用表（终版）.xlsx</span><span class="tag warn">修改</span></div></td><td class="num sub">112 KB</td><td class="num sub">11-09 17:30</td><td class="r"><button class="icon-btn" title="下载"><span class="ic i-dl"></span></button><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+                <tr><td class="nmc"><div class="nm"><span class="ic i-file"></span><span>后勤科.docx</span></div></td><td class="num sub">29 KB</td><td class="num sub">11-09 11:12</td><td class="r"><button class="icon-btn" title="下载"><span class="ic i-dl"></span></button><button class="icon-btn" title="操作"><span class="ic i-more"></span></button></td></tr>
+              </tbody>
+            </table>
+            <p class="note-hint" style="margin-top:var(--s-4)">共 6 个文件 · 可以把文件拖进来上传</p>
+          </div>
+          <aside class="pane preview">
+            <div class="crumbs"><b>汇总.md</b><span class="sp"></span><button class="btn ghost sm">引用到对话</button><button class="btn sm"><span class="ic s i-dl"></span>下载</button></div>
+            <div class="md">
+              <h3 style="margin-top:0">第 45 周周报汇总</h3>
+              <p>收到 5 份，档案室缺报。</p>
+              <table>
+                <tr><th>科室</th><th>重点工作</th></tr>
+                <tr><td>办公室</td><td>年度总结框架定稿</td></tr>
+                <tr><td>财务科</td><td>三季度经费使用表</td></tr>
+                <tr><td>后勤科</td><td>供暖设备检修完成</td></tr>
+              </table>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>
