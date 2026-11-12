@@ -152,8 +152,12 @@ def admin_users(admin: dict = Depends(require_admin)):
 @router.post("/api/admin/users")
 def admin_create_user(body: Credentials, admin: dict = Depends(require_admin)):
     username = body.username.strip()
-    if not re.fullmatch(r"\S{1,32}", username):
-        raise HTTPException(400, "用户名不能有空格，最多 32 个字")
+    if not username:
+        raise HTTPException(400, "请填写用户名")
+    if re.search(r"\s", username):
+        raise HTTPException(400, "用户名不能有空格")
+    if len(username) > 32:
+        raise HTTPException(400, "用户名最多 32 个字")
     if db("SELECT 1 FROM users WHERE username=?", (username,), one=True):
         raise HTTPException(400, "这个用户名已经有了")
     _check_new_password(body.password)
