@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import Depends, HTTPException, Request
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 BASE = Path(__file__).resolve().parent
 # 测试时用环境变量 PROJECTOR_DATA 把数据目录指到临时位置，不碰真实的 data/
 DATA = Path(os.environ["PROJECTOR_DATA"]).resolve() if os.environ.get("PROJECTOR_DATA") else BASE / "data"
@@ -106,9 +106,33 @@ def find_claude() -> str | None:
 
 # ---------- 数据库 ----------
 
-_db = sqlite3.connect(DATA / "center.db", check_same_thread=False)
+# 读写分开，免得一个人的慢查询让所有人排队：
+# - 写：全进程共用一个连接 _db，由 _db_lock 串行（SQLite 本来也只允许一个写者）。
+# - 读：每个线程各有一个只读连接（_reader），不拿 _db_lock。WAL 模式下读不挡写、写不挡读，
+#   每次写都在放锁前提交，所以写完紧接着的读（哪怕在别的线程、别的连接上）一定能看到。
+DB_PATH = DATA / "center.db"
+_db = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
 _db.row_factory = sqlite3.Row
 _db_lock = threading.Lock()
+try:
+    _db.execute("PRAGMA journal_mode=WAL")      # 会多出 center.db-wal / center.db-shm 两个文件，备份时要一起拷
+    _db.execute("PRAGMA synchronous=NORMAL")
+except sqlite3.OperationalError:
+    pass   # 放在不支持 WAL 的位置（比如网络盘）时退回默认模式，读写仍然正确，只是读会等写
+_readers = threading.local()
+
+
+def _reader() -> sqlite3.Connection:
+    conn = getattr(_readers, "conn", None)
+    if conn is None:
+        # isolation_level=None：不让 Python 替我们偷偷开事务，否则一次出错就可能停在旧快照上，之后一直读到旧数据
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only=ON")
+        _readers.conn = conn
+    return conn
+
+
 _db.executescript(
     """
     CREATE TABLE IF NOT EXISTS sessions (
@@ -197,10 +221,17 @@ _db.commit()
 
 
 def db(sql: str, args=(), one=False):
-    with _db_lock:
-        cur = _db.execute(sql, args)
-        _db.commit()
-        rows = [dict(r) for r in cur.fetchall()]
+    if sql.lstrip()[:6].upper() == "SELECT":
+        rows = [dict(r) for r in _reader().execute(sql, args).fetchall()]   # 只读：走本线程的连接，不排队
+    else:
+        with _db_lock:
+            try:
+                cur = _db.execute(sql, args)
+                _db.commit()
+            except Exception:
+                _db.rollback()
+                raise
+            rows = [dict(r) for r in cur.fetchall()]
     return (rows[0] if rows else None) if one else rows
 
 

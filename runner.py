@@ -169,7 +169,7 @@ def _hint_file(sess: dict, owner: dict) -> Path:
 
 def _deny_paths(owner: dict) -> list[Path]:
     """软隔离要保护的路径：聊天记录库、待审核的 skill、别人的工作区、各种缓存。"""
-    paths = [DATA / "center.db", DATA / "internal_token.txt", DATA / "mcp", DATA / "skills" / "submissions", TRASH,
+    paths = [DATA / "center.db", DATA / "center.db-wal", DATA / "center.db-shm", DATA / "internal_token.txt", DATA / "mcp", DATA / "skills" / "submissions", TRASH,
              kb.DOC_CACHE_DIR,   # 文档缓存：Claude 只能通过 read_document 读，不能直接碰缓存目录
              DATA / "preview"]   # Office 转 PDF 的预览缓存
     for u in db("SELECT * FROM users WHERE id != ?", (owner["id"],)):
