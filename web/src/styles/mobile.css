@@ -62,3 +62,15 @@
   .px .dlg { align-self: end; width: 100%; border-radius: var(--r-2) var(--r-2) 0 0; }
   .px .dlg .acts .btn { flex: 1; height: var(--hit-touch); }
 }
+
+/* ── 手机端总验收补的三处 ── */
+@media (max-width: 720px) {
+  /* 表格整体不能被长文件名撑宽：按块排，单元格里的长文字自己换行 */
+  .px .ledger, .px .ledger tbody { display: block; width: 100%; }
+  .px .ledger td { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
+  /* 小标签上的“移除”键：图标不变，可点范围扩大到 32px */
+  .px .chip > button { position: relative; }
+  .px .chip > button::after { content: ""; position: absolute; inset: -11px; }
+  /* 筛选用的小圆角标签加高，方便手指点 */
+  .px .pill { height: 32px; }
+}
