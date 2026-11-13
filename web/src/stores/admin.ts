@@ -2,7 +2,7 @@
 // 网址 /admin/{tab}，聊天记录里点开的会话是 /admin/chats?session=…（刷新后还在）。
 // 组件不直接 fetch：读写都在这里；每个操作做完重取当前页签的数据（和老代码“做完重画整页”一致，但不闪“读取中…”）。
 import { batch, effect, signal, untracked } from "@preact/signals";
-import { api, post } from "../lib/api";
+import { api, apiPages, post } from "../lib/api";
 import type { AdminTab } from "../router";
 import { mainRoute, navigate, replace, route } from "../router";
 import type { Section, Session } from "../lib/types";
@@ -83,13 +83,20 @@ export async function refreshPending(): Promise<AdminSubmission[]> {
   return subs;
 }
 
+/** 全队的会话：按页取完再一起给（后台的表格要完整的列表才能统计） */
+async function loadAllSessions(): Promise<AdminSessionRow[]> {
+  const all: AdminSessionRow[] = [];
+  await apiPages<AdminSessionRow>("/api/admin/sessions", 500, (rows) => { all.push(...rows); });
+  return all;
+}
+
 async function loadTabData(t: AdminTab): Promise<void> {
   if (t === "users") {
     const [all, subs, usage] = await Promise.all([
-      api<AdminSessionRow[]>("/api/admin/sessions"), refreshPending(), api<WorkspaceUsage>("/api/admin/workspace-usage").catch(() => null)]);
+      loadAllSessions(), refreshPending(), api<WorkspaceUsage>("/api/admin/workspace-usage").catch(() => null)]);
     batch(() => { allSessions.value = all; submissions.value = subs; workspaceUsage.value = usage; });
   } else if (t === "chats") {
-    allSessions.value = await api("/api/admin/sessions");
+    allSessions.value = await loadAllSessions();
   } else if (t === "library") {
     const [lib, local] = await Promise.all([api<LibrarySkill[]>("/api/admin/library"), api<LocalSkills>("/api/admin/local-skills")]);
     batch(() => { library.value = lib; localSkills.value = local; });

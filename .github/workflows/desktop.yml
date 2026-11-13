@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24   # 和前端（server-tests.yml）用同一个版本
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
@@ -45,21 +45,35 @@ jobs:
             desktop/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
-      # 打 v 开头的标签时发 Release：桌面安装包 + 台式机服务端压缩包
+  # 打 v 开头的标签时：先把服务端和前端的测试跑一遍，不过就不发 Release
+  tests:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/server-tests.yml
+
+  # 发 Release：桌面安装包 + 台式机服务端压缩包
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Projector-Windows-installer
+          path: installers
+
       - name: 打包服务端
-        if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: .
         shell: bash
         run: |
           # 前端产物是提交在 static/app 里的（台式机不装 Node）。打包前确认首页引用的文件都在，缺了就不发版
           test -f static/app/index.html
           for f in $(grep -o '/static/app/assets/[^"]*' static/app/index.html); do test -f ".$f" || { echo "缺少前端产物：$f"; exit 1; }; done
           git archive --format=zip --prefix=Projector-server/ -o "Projector-server-${GITHUB_REF_NAME}.zip" HEAD \
-            ':(glob)*.py' requirements.txt static \
+            ':(glob)*.py' requirements.txt requirements-sdk.txt static \
             install.bat start.bat config.example.bat README.md
 
       - name: 发布 Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: Projector ${{ github.ref_name }}
@@ -69,5 +83,5 @@ jobs:
             安装包没有签名，Windows 提示“已保护你的电脑”时点“更多信息”→“仍要运行”。详细说明见 README。
           files: |
             Projector-server-${{ github.ref_name }}.zip
-            desktop/src-tauri/target/release/bundle/msi/*.msi
-            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            installers/**/*.msi
+            installers/**/*.exe

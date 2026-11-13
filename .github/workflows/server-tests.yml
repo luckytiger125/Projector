@@ -19,6 +19,7 @@ on:
       - "static/**"
       - ".github/workflows/server-tests.yml"
   workflow_dispatch:
+  workflow_call:   # 发版流程（desktop.yml）打标签时会先调用这里，测试不过就不发 Release
 
 permissions:
   contents: read

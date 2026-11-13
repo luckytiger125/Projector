@@ -185,12 +185,12 @@ describe("resync", () => {
     const calls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       calls.push(url);
-      return new Response(JSON.stringify(url === "/api/sessions" ? [] : { seq: 7, session: sess("a"), messages: [], has_more: false, live: null, approvals: [] }), { status: 200 });
+      return new Response(JSON.stringify(url === "/api/sessions?limit=200" ? [] : { seq: 7, session: sess("a"), messages: [], has_more: false, live: null, approvals: [] }), { status: 200 });
     }));
     setCurrent("a", 3);
     handleEvent({ type: "resync" });
     await vi.waitFor(() => expect(chat.snapSeq.value).toBe(7));
-    expect(calls).toContain("/api/sessions");
+    expect(calls).toContain("/api/sessions?limit=200");
     expect(calls).toContain("/api/sessions/a");
     vi.unstubAllGlobals();
   });
@@ -272,11 +272,11 @@ describe("连接和重连", () => {
     connect();
     const es = FakeES.all[0];
     es.onopen?.();
-    const after1 = f.mock.calls.filter((c) => c[0] === "/api/sessions").length;
+    const after1 = f.mock.calls.filter((c) => c[0] === "/api/sessions?limit=200").length;
     expect(after1).toBe(1);
     es.onerror?.();
     es.onopen?.();
-    expect(f.mock.calls.filter((c) => c[0] === "/api/sessions").length).toBe(1);
+    expect(f.mock.calls.filter((c) => c[0] === "/api/sessions?limit=200").length).toBe(1);
   });
 
   it("手动重连但还没收到过事件（没有 last_id）：重连后整体重拉", async () => {
@@ -290,7 +290,7 @@ describe("连接和重连", () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(FakeES.all[1].url).toBe("/api/events");
     FakeES.all[1].onopen?.();
-    expect(f.mock.calls.filter((c) => c[0] === "/api/sessions").length).toBe(2);
+    expect(f.mock.calls.filter((c) => c[0] === "/api/sessions?limit=200").length).toBe(2);
   });
 
   it("断开后不再重连", async () => {

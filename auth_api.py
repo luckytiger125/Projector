@@ -7,12 +7,15 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
+import anyio.from_thread
+
 import files_api
 import store
 import sdk_runner
 from runner import (DEFAULT_ASK_CMDS, DEFAULT_BASH_ALLOW, RUNS, SAFE_BASH, dispatch_queue, max_concurrent, perm_mode,
-                    runner_mode, sdk_idle_seconds)
-from store import (AVATARS, DATA, PORT, VERSION, adopt_orphans, can_bypass, check_password, current_user, db, first_admin,
+                    runner_mode, sdk_close_session, sdk_idle_seconds)
+from sessions_api import remove_session_files
+from store import (AVATARS, DATA, PORT, VERSION, adopt_orphans, can_bypass, check_password, current_user, db, db_tx, first_admin,
                    get_setting, get_user, hash_password, is_local, issue_token, require_admin, set_auth_cookie, set_setting,
                    user_public, user_ws_dir, clear_auth_cookie, _token_from)
 
@@ -72,12 +75,47 @@ def setup_admin(body: Credentials, request: Request, response: Response):
     return {"token": token, "user": me_view(u)}
 
 
+# 猜密码的限制：同一个用户名、或同一台电脑，10 分钟内错 8 次就锁 10 分钟（存在内存里，重启清零）。
+# 按用户名算是防别人换着电脑猜同一个账号；按电脑算是防一台电脑换着账号猜。
+LOGIN_MAX_FAILS = 8
+LOGIN_WINDOW = 600
+_fails: dict[str, list[float]] = {}
+_DUMMY_HASH = hash_password("-")   # 用户名不存在时也算一次，免得从响应快慢看出有没有这个账号
+
+
+def _fail_keys(username: str, request: Request) -> list[str]:
+    host = request.client.host if request.client else "?"
+    return [f"u:{username.lower()}", f"h:{host}"]
+
+
+def _locked(keys: list[str], now: float) -> bool:
+    for k in keys:
+        recent = [t for t in _fails.get(k, []) if now - t < LOGIN_WINDOW]
+        if recent:
+            _fails[k] = recent
+        else:
+            _fails.pop(k, None)
+        if len(recent) >= LOGIN_MAX_FAILS:
+            return True
+    return False
+
+
 @router.post("/api/login")
-async def login(body: Credentials, response: Response):
-    u = db("SELECT * FROM users WHERE username=?", (body.username.strip(),), one=True)
-    if not u or u["disabled"] or u["role"] not in ("admin", "user") or not check_password(body.password, u["pw_hash"]):
+async def login(body: Credentials, request: Request, response: Response):
+    username = body.username.strip()[:64]
+    keys, now = _fail_keys(username, request), time.time()
+    if _locked(keys, now):
+        raise HTTPException(429, "密码错的次数太多，请 10 分钟后再试，或者找管理员重置密码")
+    u = db("SELECT * FROM users WHERE username=?", (username,), one=True)
+    usable = bool(u) and not u["disabled"] and u["role"] in ("admin", "user")
+    # scrypt 要算几十毫秒，放到线程里，不占住事件循环
+    ok = await asyncio.to_thread(check_password, body.password, u["pw_hash"] if usable else _DUMMY_HASH)
+    if not (usable and ok):
+        for k in keys:
+            _fails.setdefault(k, []).append(now)
         await asyncio.sleep(1)  # 放慢猜密码
         raise HTTPException(401, "用户名或密码不对")
+    _fails.pop(keys[0], None)   # 登录成功：这个账号的错误次数清零（这台电脑的不清，免得用自己的账号给别的账号“续命”）
     token = issue_token(u["id"])
     set_auth_cookie(response, token)
     return {"token": token, "user": me_view(u)}
@@ -209,13 +247,20 @@ def admin_delete_user(uid: int, admin: dict = Depends(require_admin)):
     if any(r.owner_id == uid for r in RUNS.values()):
         raise HTTPException(409, "这个用户还有任务在进行")
     ud = user_ws_dir(u, create=False)  # 删账号记录之前先定位工作区
-    for s in db("SELECT id FROM sessions WHERE user_id=?", (uid,)):
-        for table in ("messages", "turn_queue", "active_runs"):
-            db(f"DELETE FROM {table} WHERE session_id=?", (s["id"],))
-    for sql in ("DELETE FROM sessions WHERE user_id=?", "DELETE FROM links WHERE user_id=?",
-                "DELETE FROM tokens WHERE user_id=?", "DELETE FROM skill_access WHERE user_id=?",
-                "DELETE FROM users WHERE id=?"):
-        db(sql, (uid,))
+    sids = [s["id"] for s in db("SELECT id FROM sessions WHERE user_id=?", (uid,))]
+    # 放在一个事务里：中途出错就整个不删，不会留下“账号没了、会话还在”的半截状态
+    stmts = [(f"DELETE FROM {t} WHERE session_id=?", (sid,)) for sid in sids for t in ("messages", "turn_queue", "active_runs")]
+    stmts += [(sql, (uid,)) for sql in (
+        "DELETE FROM sessions WHERE user_id=?", "DELETE FROM links WHERE user_id=?",
+        "DELETE FROM tokens WHERE user_id=?", "DELETE FROM skill_access WHERE user_id=?",
+        "DELETE FROM users WHERE id=?")]
+    db_tx(stmts)
+    for sid in sids:
+        remove_session_files(sid)
+        try:   # 关掉这个会话的 sdk 常驻进程（和删会话时一样：回到事件循环去做，失败不影响删除）
+            anyio.from_thread.run(sdk_close_session, sid)
+        except Exception:
+            pass
     if ud.exists():
         files_api.move_to_trash(ud, admin, f"删除用户 {u['display_name']}")
     shutil.rmtree(DATA / "plugins" / str(uid), ignore_errors=True)

@@ -227,3 +227,32 @@ describe("提示条和主题", () => {
     expect(theme.value).toBe("auto");
   });
 });
+
+describe("loadSessions 按页取", () => {
+  it("第一页先显示，后面的页接在后面，已有的不覆盖", async () => {
+    const { loadSessions, sessions: list, listSeq: seq } = await import("./sessions");
+    const mk = (id: string, updated: number) => ({ id, title: id, updated, user_id: 1, section_id: null });
+    const pages: Record<string, { rows: unknown[]; next: string }> = {
+      "": { rows: [mk("a", 3), mk("b", 2)], next: "2:b" },
+      "2:b": { rows: [mk("b", 2), mk("c", 1)], next: "" },
+    };
+    const urls: string[] = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      urls.push(url);
+      const before = new URL(url, "http://x").searchParams.get("before") || "";
+      const pg = pages[before];
+      const headers = new Headers({ "X-Event-Seq": "7" });
+      if (pg.next) headers.set("X-Next-Before", pg.next);
+      return { ok: true, status: 200, headers, json: async () => pg.rows };
+    }) as unknown as typeof fetch;
+    try {
+      await loadSessions();
+    } finally { globalThis.fetch = orig; }
+    expect(urls.length).toBe(2);
+    expect(urls[0]).toContain("limit=200");
+    expect(urls[1]).toContain("before=2%3Ab");
+    expect(list.value.map((s) => s.id)).toEqual(["a", "b", "c"]);
+    expect(seq.value).toBe(7);
+  });
+});

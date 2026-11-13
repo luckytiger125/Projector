@@ -28,6 +28,8 @@ def clean_db():
     def wipe():
         for t in _CLEAN_TABLES:
             store.db(f"DELETE FROM {t}")
+        if auth := sys.modules.get("auth_api"):
+            auth._fails.clear()   # 登录失败次数记在内存里，不清的话用例之间会互相锁住
     wipe()
     yield
     wipe()

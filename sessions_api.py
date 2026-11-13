@@ -2,6 +2,7 @@
 import json
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -18,13 +19,27 @@ from approvals import approval_public, pending_for, questions_for
 from events import lock as events_lock
 from events import broadcast, current_seq, push_session
 from runner import KB_ACTIONS, RUNS, live_snapshot, submit_turn
-from store import (CLAUDE_HOME, DATA, FILE_ROOT, avatar_of, can_bypass, current_user, db, get_user, require_admin,
+from store import (CLAUDE_HOME, DATA, FILE_ROOT, avatar_of, can_bypass, current_user, db, db_tx, get_user, require_admin,
                    session_for, session_workspace)
 
 router = APIRouter()
 
 
 # ---------- 会话 ----------
+
+# 删会话时要一起清掉的表（usage_turns 不删：用量统计要保留）
+SESSION_TABLES = (("messages", "session_id"), ("links", "session_id"), ("turn_queue", "session_id"),
+                  ("active_runs", "session_id"), ("sessions", "id"))
+STEPS_DEFAULT = 2000
+STEPS_MAX = 10000
+
+
+def remove_session_files(sid: str) -> None:
+    """会话删掉后，它在 data/mcp 里的配置文件和 data/logs 里的日志也删掉。"""
+    for f in (f"{sid}.json", f"hint_{sid}.txt", f"settings_{sid}.json", f"guard_{sid}.json"):
+        (DATA / "mcp" / f).unlink(missing_ok=True)
+    (DATA / "logs" / f"claude_{sid}.log").unlink(missing_ok=True)
+
 
 def session_stats(sids: list[str]) -> dict[str, dict]:
     """一次查询补齐一批会话的消息数、最后一轮结果、文件数、排队中的消息（列表里不能逐会话查库）。"""
@@ -34,8 +49,10 @@ def session_stats(sids: list[str]) -> dict[str, dict]:
         ph = ",".join("?" * len(chunk))
         for r in db(f"SELECT session_id, COUNT(*) AS c FROM messages WHERE session_id IN ({ph}) GROUP BY session_id", chunk):
             out[r["session_id"]]["message_count"] = r["c"]
-        for r in db(f"SELECT m.session_id, m.role, m.meta FROM messages m WHERE m.session_id IN ({ph}) AND m.id IN "
-                    "(SELECT MAX(id) FROM messages WHERE role IN ('assistant','error') GROUP BY session_id)", chunk):
+        # 子查询也要限定在这批会话里：不然每来一条消息（push_session 会走到这）都要把整张消息表扫一遍
+        for r in db("SELECT m.session_id, m.role, m.meta FROM messages m WHERE m.id IN "
+                    f"(SELECT MAX(id) FROM messages WHERE session_id IN ({ph}) AND role IN ('assistant','error') "
+                    "GROUP BY session_id)", chunk):
             try:
                 meta = json.loads(r["meta"] or "{}")
             except ValueError:
@@ -142,25 +159,49 @@ def _owner_only(sess: dict, user: dict) -> None:
         raise HTTPException(403, "这是别人的会话，只能查看")
 
 
+LIST_PAGE_MAX = 500
+
+
+def _session_page(response: Response, where: str, args: list, limit: int | None, before: str) -> list[dict]:
+    """会话列表（按更新时间倒序）。不传 limit 就是全部（老版本网页的行为）；传了就分页：
+    响应头 X-Next-Before 是下一页的游标（没有这个头就是到底了），下一次请求用 ?before= 带回来。
+    游标是“更新时间:会话号”，翻页中间有新会话或会话被更新也不会重复、不会错位。"""
+    if limit is None:
+        return session_views(db(f"SELECT * FROM sessions WHERE {where} ORDER BY updated DESC, id DESC", args))
+    limit = max(1, min(LIST_PAGE_MAX, limit))
+    if before:
+        try:
+            upd, _, last_id = before.partition(":")
+            where, args = where + " AND (updated < ? OR (updated = ? AND id < ?))", [*args, float(upd), float(upd), last_id]
+        except ValueError:
+            raise HTTPException(400, "翻页参数不对")
+    rows = db(f"SELECT * FROM sessions WHERE {where} ORDER BY updated DESC, id DESC LIMIT ?", [*args, limit + 1])
+    if len(rows) > limit:
+        rows = rows[:limit]
+        response.headers["X-Next-Before"] = f"{rows[-1]['updated']!r}:{rows[-1]['id']}"
+    return session_views(rows)
+
+
 @router.get("/api/admin/sessions")
-def admin_sessions(admin: dict = Depends(require_admin)):
-    return session_views(db("SELECT * FROM sessions ORDER BY updated DESC"))
+def admin_sessions(response: Response, limit: int | None = None, before: str = "", admin: dict = Depends(require_admin)):
+    return _session_page(response, "1=1", [], limit, before)
 
 
 # ---------- 会话接口 ----------
 
 
 @router.get("/api/sessions")
-def list_sessions(response: Response, section_id: int | None = None, user: dict = Depends(current_user)):
+def list_sessions(response: Response, section_id: int | None = None, limit: int | None = None, before: str = "",
+                  user: dict = Depends(current_user)):
     response.headers["X-Event-Seq"] = str(current_seq())   # 先于读库取：客户端据此忽略列表快照之前的 session 事件
     # 判断必须用 is None / == 0：0 是假值，“未分类”不能被当成“全部”
     if section_id is None:
-        rows = db("SELECT * FROM sessions WHERE user_id=? ORDER BY updated DESC", (user["id"],))
+        where, args = "user_id=?", [user["id"]]
     elif section_id == 0:
-        rows = db("SELECT * FROM sessions WHERE user_id=? AND section_id IS NULL ORDER BY updated DESC", (user["id"],))
+        where, args = "user_id=? AND section_id IS NULL", [user["id"]]
     else:
-        rows = db("SELECT * FROM sessions WHERE user_id=? AND section_id=? ORDER BY updated DESC", (user["id"], section_id))
-    return session_views(rows)
+        where, args = "user_id=? AND section_id=?", [user["id"], section_id]
+    return _session_page(response, where, args, limit, before)
 
 
 @router.post("/api/sessions")
@@ -249,15 +290,11 @@ def delete_session(sid: str, user: dict = Depends(current_user)):
     s = session_for(sid, user)
     if sid in RUNS:
         raise HTTPException(409, "任务进行中，请先停止")
-    db("DELETE FROM messages WHERE session_id=?", (sid,))
-    db("DELETE FROM sessions WHERE id=?", (sid,))
-    db("DELETE FROM links WHERE session_id=?", (sid,))
-    db("DELETE FROM turn_queue WHERE session_id=?", (sid,))
+    db_tx([(f"DELETE FROM {t} WHERE {col}=?", (sid,)) for t, col in SESSION_TABLES])
     ws = session_workspace(s, create=False)
     if ws and ws.exists():
         files_api.move_to_trash(ws, user, f"删除会话 {s['title']}")
-    for f in (f"{sid}.json", f"hint_{sid}.txt", f"settings_{sid}.json", f"guard_{sid}.json"):
-        (DATA / "mcp" / f).unlink(missing_ok=True)
+    remove_session_files(sid)
     try:   # 关掉 sdk 常驻客户端：它的状态属于事件循环线程，所以从线程池函数里回到事件循环去做；失败不影响删除
         anyio.from_thread.run(runner.sdk_close_session, sid)
     except Exception:
@@ -296,15 +333,16 @@ async def send_message(sid: str, body: Send, user: dict = Depends(current_user))
 
 
 @router.get("/api/sessions/{sid}/transcript")
-def transcript(sid: str, user: dict = Depends(current_user)):
-    """读取 Claude Code 自己保存的完整记录（每一步思考、工具调用和返回）。"""
+def transcript(sid: str, limit: int = STEPS_DEFAULT, user: dict = Depends(current_user)):
+    """读取 Claude Code 自己保存的完整记录（每一步思考、工具调用和返回）。只返回最后 limit 步，长会话不会一次吐出几十 MB。"""
+    limit = max(1, min(STEPS_MAX, limit))
     s = session_for(sid, user)
     if not s["claude_session"]:
         return {"steps": [], "note": "这个会话还没有记录"}
     files = list((CLAUDE_HOME / "projects").glob(f"*/{s['claude_session']}.jsonl"))
     if not files:
         return {"steps": [], "note": "找不到 Claude Code 的记录文件"}
-    steps = []
+    steps: deque = deque(maxlen=limit + 1)   # 多留一步，用来判断前面是不是还有
     with files[0].open(encoding="utf-8", errors="replace") as f:
         for line in f:
             try:
@@ -333,4 +371,7 @@ def transcript(sid: str, user: dict = Depends(current_user)):
                     text = str(c or "")
                     steps.append({"kind": "tool_result", "error": bool(b.get("is_error")),
                                   "text": text[:3000] + ("……（已截断）" if len(text) > 3000 else "")})
-    return {"steps": steps}
+    out = list(steps)
+    if len(out) > limit:
+        return {"steps": out[1:], "truncated": True, "note": f"记录很长，只显示最后 {limit} 步"}
+    return {"steps": out, "truncated": False}

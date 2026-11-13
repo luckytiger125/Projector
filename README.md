@@ -217,7 +217,7 @@
 
 **自己构建**
 
-推送到 `main` 且改动了 `desktop/` 时，GitHub Actions 会在 Windows 上自动构建安装包（在 Actions 页的 Artifacts 里）；也可以手动点 “Run workflow”。推送 `v` 开头的标签（比如 `git tag v0.1.1 && git push origin v0.1.1`）会自动发 Release。发版前记得同时改 `desktop/src-tauri/tauri.conf.json` 里的版本号。在 Mac 上开发调试：
+推送到 `main` 且改动了 `desktop/` 时，GitHub Actions 会在 Windows 上自动构建安装包（在 Actions 页的 Artifacts 里）；也可以手动点 “Run workflow”。推送 `v` 开头的标签（比如 `git tag v0.1.1 && git push origin v0.1.1`）会自动发 Release：先跑一遍服务端和前端的测试，测试不过就不发。发版前记得同时改版本号，一共四处：`store.py` 的 `VERSION`、`desktop/src-tauri/tauri.conf.json`、`desktop/src-tauri/Cargo.toml`、`desktop/package.json`。在 Mac 上开发调试：
 
 ```bash
 cd desktop && npm install && npm run tauri dev
@@ -255,6 +255,17 @@ python -m pytest -q
 网页端的测试：`cd web && npm run check`。
 
 测试用临时目录当数据、文件库、工作区和知识库，不会动 `data/` 和真实的 D 盘。
+
+## 安全和自动清理
+
+- **文件库里的网页不会在站内打开**：别人上传的 `.html`、`.svg` 等文件，直接访问链接时一律当下载处理，不会以 Projector 网页的身份运行（否则里面的脚本能拿到打开者的登录状态）。图片、PDF、音视频照常直接显示。
+- **登录限次**：同一个用户名或同一台电脑 10 分钟内输错 8 次密码，锁 10 分钟；着急的话让管理员重置密码，或重启服务（次数记在内存里）。
+- **自动清理**：服务启动一分钟后跑一次，之后每 6 小时一次，出错只记在 `data/logs/usage.log`。
+  - 回收站里过了 30 天的文件、过期的登录记录；
+  - Office 预览缓存（`data/preview`）：30 天没用过的删掉，总量超过 2 GB 时从最久没用的删起；
+  - 日志（`data/logs`）：已删除会话的 `claude_<会话id>.log` 删掉，单个日志超过 5 MB 时只留最后 1 MB；
+  - “管理后台 → 文件记录”只留最近 5 万条。
+- 删会话、删用户时，对应的日志和 `data/mcp` 里的配置文件一起删；用量统计保留。
 
 ## 已知限制
 

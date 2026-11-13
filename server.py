@@ -27,6 +27,7 @@ import approvals
 import auth_api
 import events
 import files_api
+import housekeeping
 import kb
 import runner
 import sdk_runner
@@ -46,16 +47,30 @@ async def _sdk_idle_loop() -> None:
             usage.log_failure("-", "sdk_idle")
 
 
+async def _housekeeping_loop() -> None:
+    """定期清理过期的回收站、令牌、预览缓存、日志（见 housekeeping.py）。放线程里跑，不占事件循环。"""
+    await asyncio.sleep(housekeeping.FIRST_DELAY)
+    while True:
+        try:
+            await asyncio.to_thread(housekeeping.run_all, set(runner.RUNS))
+        except Exception:
+            usage.log_failure("-", "housekeeping")
+        await asyncio.sleep(housekeeping.INTERVAL)
+
+
 @asynccontextmanager
 async def lifespan(_app):
     runner.dispatch_queue()   # 事件循环起来了：把重启前还排着的消息接着开始
-    idle_task = asyncio.create_task(_sdk_idle_loop())   # sdk 模式：定期关掉空闲的常驻客户端
+    tasks = [asyncio.create_task(_sdk_idle_loop()),   # sdk 模式：定期关掉空闲的常驻客户端
+             asyncio.create_task(_housekeeping_loop())]
     yield
-    idle_task.cancel()
-    try:
-        await idle_task
-    except asyncio.CancelledError:
-        pass
+    for t in tasks:
+        t.cancel()
+    for t in tasks:
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
     try:
         await sdk_runner.close_all()
     except Exception:

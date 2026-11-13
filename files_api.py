@@ -33,6 +33,9 @@ SOFFICE = os.environ.get("SOFFICE") or shutil.which("soffice") or next(
 HIDDEN_NAMES = {"$recycle.bin", "system volume information", "pagefile.sys", "swapfile.sys", "hiberfil.sys",
                 "dumpstack.log.tmp", "config.msi", "recovery"}
 TEXT_LIMIT = 1024 * 1024
+# 可以直接在浏览器里显示的类型（不含 .html、.svg 这类能带脚本的）
+INLINE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif", ".pdf",
+               ".mp4", ".webm", ".mov", ".m4v", ".ogv", ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".opus"}
 MAX_UPLOAD = 1024 ** 3          # 单个文件最大 1 GB
 _soffice_lock = asyncio.Lock()
 _WS_RE = re.compile(r"^ws(\d*):(.*)$", re.S)
@@ -227,14 +230,24 @@ def files_raw(path: str, download: bool = False, user: dict = Depends(current_us
     target = resolve_path(path, user)
     if not target.is_file():
         raise HTTPException(400, "这是文件夹")
-    return FileResponse(target, filename=target.name,
-                        content_disposition_type="attachment" if download else "inline")
+    # 文件库里的东西是大家传上来的，不能让浏览器把它当成本站的网页打开：.html、.svg 里的脚本会以本站的身份运行，
+    # 能读到登录令牌。所以只有图片、PDF、音视频直接显示，其余一律当下载；再加 nosniff（不许浏览器自己猜类型）
+    # 和 sandbox（万一还是被当网页渲染，也不能跑脚本、不算本站）。<img>、fetch 不受“当下载”影响，预览照常。
+    inline = not download and target.suffix.lower() in INLINE_EXTS
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if target.suffix.lower() != ".pdf":   # 浏览器自带的 PDF 阅读器在 sandbox 下打不开
+        headers["Content-Security-Policy"] = "sandbox"
+    return FileResponse(target, filename=target.name, headers=headers,
+                        content_disposition_type="inline" if inline else "attachment")
 
 
 @router.get("/api/files/text")
 def files_text(path: str, user: dict = Depends(current_user)):
     target = resolve_path(path, user)
-    data = target.read_bytes()[:TEXT_LIMIT + 1]
+    if not target.is_file():
+        raise HTTPException(400, "这是文件夹")
+    with open(target, "rb") as f:   # 只读前 1 MB：不要把整个大文件读进内存
+        data = f.read(TEXT_LIMIT + 1)
     truncated = len(data) > TEXT_LIMIT
     data = data[:TEXT_LIMIT]
     for enc in ("utf-8-sig", "gb18030", "utf-16"):  # 中文 Windows 上的老文件常是 GBK
@@ -303,6 +316,29 @@ def _unique(p: Path) -> Path:
         n += 1
 
 
+async def _receive(request: Request, dest: Path) -> tuple[Path, int]:
+    """把请求体收到 dest 旁边的 .uploading 临时文件里，返回 (临时文件, 字节数)。
+    写盘放到线程里做，大文件上传时不占住事件循环（不然所有人的流式输出都会卡）；
+    超过上限、对方中途断开或任何出错，都把临时文件删掉。"""
+    if int(request.headers.get("content-length") or 0) > MAX_UPLOAD:
+        raise HTTPException(413, "单个文件不能超过 1 GB")
+    await asyncio.to_thread(dest.parent.mkdir, parents=True, exist_ok=True)
+    tmp, size = dest.with_name(dest.name + ".uploading"), 0
+    f = await asyncio.to_thread(open, tmp, "wb")
+    try:
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_UPLOAD:
+                raise HTTPException(413, "单个文件不能超过 1 GB")
+            await asyncio.to_thread(f.write, chunk)
+    except BaseException:   # 含 ClientDisconnect 和任务被取消
+        f.close()
+        tmp.unlink(missing_ok=True)
+        raise
+    f.close()
+    return tmp, size
+
+
 def _busy(e: Exception) -> HTTPException:
     return HTTPException(409, f"操作失败，文件可能正被别的程序打开：{e}")
 
@@ -368,8 +404,6 @@ async def files_upload(request: Request, dir: str, name: str, on_conflict: str =
     if not _within(dest, parent):
         raise HTTPException(400, "文件路径不对")
     _check_write(dest, user)
-    if int(request.headers.get("content-length") or 0) > MAX_UPLOAD:
-        raise HTTPException(413, "单个文件不能超过 1 GB")
     replaced = None
     if dest.exists():
         if dest.is_dir():
@@ -380,16 +414,7 @@ async def files_upload(request: Request, dir: str, name: str, on_conflict: str =
             replaced = dest
         else:
             raise HTTPException(409, json.dumps({"exists": True, "name": dest.name}, ensure_ascii=False))
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp, size = dest.with_name(dest.name + ".uploading"), 0
-    with open(tmp, "wb") as f:
-        async for chunk in request.stream():
-            size += len(chunk)
-            if size > MAX_UPLOAD:
-                f.close()
-                tmp.unlink(missing_ok=True)
-                raise HTTPException(413, "单个文件不能超过 1 GB")
-            f.write(chunk)
+    tmp, size = await _receive(request, dest)
     if replaced:
         try:
             move_to_trash(replaced, user, "上传时被覆盖")
@@ -617,19 +642,12 @@ async def links_upload(sid: str, lid: str, path: str, request: Request, user: di
     dest = (root / _safe_rel(path)).resolve()
     if not dest.is_relative_to(root.resolve()):
         raise HTTPException(400, "文件路径不对")
-    if int(request.headers.get("content-length") or 0) > MAX_UPLOAD:
-        raise HTTPException(413, "单个文件不能超过 1 GB")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp, size = dest.with_name(dest.name + ".uploading"), 0
-    with open(tmp, "wb") as f:
-        async for chunk in request.stream():
-            size += len(chunk)
-            if size > MAX_UPLOAD:
-                f.close()
-                tmp.unlink(missing_ok=True)
-                raise HTTPException(413, "单个文件不能超过 1 GB")
-            f.write(chunk)
-    tmp.replace(dest)
+    tmp, size = await _receive(request, dest)
+    try:
+        tmp.replace(dest)
+    except OSError as e:
+        tmp.unlink(missing_ok=True)
+        raise _busy(e)
     return {"ok": True, "size": size}
 
 

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import Depends, HTTPException, Request
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 BASE = Path(__file__).resolve().parent
 # 测试时用环境变量 PROJECTOR_DATA 把数据目录指到临时位置，不碰真实的 data/
 DATA = Path(os.environ["PROJECTOR_DATA"]).resolve() if os.environ.get("PROJECTOR_DATA") else BASE / "data"
@@ -217,6 +217,7 @@ for _table, _col in (("sessions", "bypass INTEGER DEFAULT 0"), ("sessions", "cre
     except sqlite3.OperationalError:
         pass  # 列已存在
 _db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_section ON sessions(section_id)")
+_db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_updated ON sessions(user_id, updated)")
 _db.commit()
 
 
@@ -258,6 +259,18 @@ def db_many(sql: str, rows) -> int:
             _db.rollback()
             raise
         return _db.total_changes - before
+
+
+def db_tx(statements) -> None:
+    """一次锁、一次提交执行多条写语句 [(sql, args), ...]；任何一条失败整批回滚。"""
+    with _db_lock:
+        try:
+            for sql, args in statements:
+                _db.execute(sql, args)
+            _db.commit()
+        except Exception:
+            _db.rollback()
+            raise
 
 
 def get_setting(key: str, default=None):
@@ -350,6 +363,15 @@ def issue_token(uid: int) -> str:
     now = time.time()
     db("INSERT INTO tokens (token, user_id, created, last_used) VALUES (?,?,?,?)", (token, uid, now, now))
     return token
+
+
+def purge_tokens(now: float | None = None) -> int:
+    """删掉已经过了空闲有效期的令牌（本来也登录不了，只是不让表一直变大）。"""
+    cutoff = (now if now is not None else time.time()) - TOKEN_IDLE_DAYS * 86400
+    n = db("SELECT COUNT(*) AS c FROM tokens WHERE last_used < ?", (cutoff,), one=True)["c"]
+    if n:
+        db("DELETE FROM tokens WHERE last_used < ?", (cutoff,))
+    return n
 
 
 AUTH_COOKIE = "projector_token"

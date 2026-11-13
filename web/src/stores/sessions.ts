@@ -1,6 +1,6 @@
 // 会话列表和分区。当前打开的会话在 chat.ts；这里不依赖 chat.ts（chat.ts 依赖这里）。
 import { computed, signal } from "@preact/signals";
-import { api } from "../lib/api";
+import { api, apiPages } from "../lib/api";
 import type { Section, Session } from "../lib/types";
 import { mainRoute } from "../router";
 import { me } from "./auth";
@@ -58,12 +58,31 @@ export function selectSection(id: number | null): Promise<void> {
 
 // ---------- 列表 ----------
 
+const PAGE = 200;
+let loadSeq = 0;
+
+/** 按页取：第一页一到就显示，后面的页接着取、接在后面。中途又调了一次（换分区、重连）的话，旧的那次作废 */
 export async function loadSessions(): Promise<void> {
+  const seq = ++loadSeq;
   const cur = currentSection.value;
   const qs = cur === null ? "" : `?section_id=${encodeURIComponent(cur)}`;
-  const onSeq = (n: number) => { listSeq.value = n; };
-  try { sessions.value = await api<Session[]>("/api/sessions" + qs, { onSeq }); }
-  catch { sessions.value = await api<Session[]>("/api/sessions", { onSeq }); }
+  const onSeq = (n: number) => { if (seq === loadSeq) listSeq.value = n; };
+  const onPage = (rows: Session[], first: boolean): boolean => {
+    if (seq !== loadSeq) return false;
+    if (first) { sessions.value = rows; return true; }
+    // 取后面几页的时候，前面的会话可能已经被事件更新过：已有的不覆盖
+    const have = new Set(sessions.value.map((s) => s.id));
+    sessions.value = [...sessions.value, ...rows.filter((s) => !have.has(s.id))];
+    return true;
+  };
+  let started = false;
+  const page = (rows: Session[], first: boolean) => { started = true; return onPage(rows, first); };
+  try { await apiPages<Session>("/api/sessions" + qs, PAGE, page, { onSeq }); }
+  catch (e) {
+    if (started) return;   // 第一页已经显示了，后面的页没取到：留着已有的，下次刷新再取
+    if (!qs) throw e;
+    await apiPages<Session>("/api/sessions", PAGE, page, { onSeq });
+  }
 }
 
 /** 只处理列表这一半：自己的会话放到最前并按 updated 倒序。当前会话的更新在 chat.ts 的 upsertSession 里 */
