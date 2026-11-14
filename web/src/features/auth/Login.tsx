@@ -42,6 +42,13 @@ export function Login() {
 
   return (
     <div class="veil login-veil">
+      <div class="auth">
+      {/* 左半边：藏青底、竖排标题、朱砂印（迁移到组件时漏掉了，按老界面补回来）；窄屏不显示 */}
+      <section class="auth-hero" aria-hidden="true">
+        <div class="vert-title">综合部工作台</div>
+        <div class="seal">值班</div>
+      </section>
+      <section class="auth-side">
       <form class="login" ref={form} onSubmit={submit}>
         <div class="kicker"><span>Projector · 综合部工作台</span></div>
         <h3>{setup ? "创建管理员" : "欢迎回来"}</h3>
@@ -59,6 +66,8 @@ export function Login() {
         <button class="btn primary block" style="height:var(--hit)" disabled={busy}>{setup ? "创建并进入" : "登录"}</button>
         {!setup && <p class="ft">没有账号？请找管理员开通</p>}
       </form>
+      </section>
+      </div>
     </div>
   );
 }

@@ -34,9 +34,20 @@
 .px .m-tabs a { cursor: pointer; }
 
 /* ── 浮层：盖住整个窗口（样稿里是盖在主区域上） ── */
-.px .veil { position: fixed; z-index: 50; }
+.px .veil { position: fixed; top: var(--titlebar-h, 0px); z-index: 50; }
 .px .veil.top { align-items: start; padding-top: 14vh; z-index: 60; }
-.px .login-veil { background: var(--paper-0); z-index: 70; }
+.px .login-veil { background: var(--paper-0); z-index: 70; padding: 0; place-items: stretch; }
+/* 登录页：左边藏青底竖排标题，右边表单直接落在纸上（不套卡片） */
+.px .auth { display: grid; grid-template-columns: 1.1fr 1fr; width: 100%; height: 100%; min-height: 0; }
+.px .auth-hero { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--navy); color: var(--on-navy); }
+.px .auth-hero .vert-title { writing-mode: vertical-rl; text-orientation: upright; font: 600 var(--t-40)/1.15 var(--f-serif); letter-spacing: .38em; animation: fade var(--d-slow) both; }
+.px .auth-hero .seal { position: absolute; bottom: var(--s-12); border: 2px solid var(--vermilion); color: var(--vermilion); padding: 6px var(--s-3); font: 700 var(--t-12) var(--f-mono); letter-spacing: .2em; }
+.px .auth-side { display: grid; place-items: center; padding: var(--s-6); background: var(--paper-1); overflow-y: auto; }
+.px .auth-side .login { width: min(360px, 100%); background: transparent; border: 0; box-shadow: none; padding: 0; }
+@media (max-width: 780px) {
+  .px .auth { grid-template-columns: 1fr; }
+  .px .auth-hero { display: none; }
+}
 .px .dlg { position: relative; width: min(420px, 100%); max-height: 90vh; display: flex; flex-direction: column; padding: 0; }
 .px .dlg.wide { width: min(780px, 100%); }
 .px .dlg-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-2) var(--s-5); }

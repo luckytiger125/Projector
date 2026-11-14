@@ -1,6 +1,6 @@
 /* 外壳：竖栏、值班目录、用户菜单、对话框、提示条、命令面板、登录。拆自 docs/design/mock.css */
 /* ── 壳层 ── */
-.px .app { display: grid; grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr); height: 100vh; }
+.px .app { display: grid; grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr); height: calc(100vh - var(--titlebar-h, 0px)); }   /* --titlebar-h：桌面软件自绘顶栏的高度，浏览器里没有 */
 .px .rail { background: var(--navy); color: var(--on-navy); display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: var(--s-5) 0; }
 .px .rail .seal { width: 32px; height: 32px; display: grid; place-items: center; background: var(--vermilion); color: #fff; font: 700 17px/1 var(--f-serif); border-radius: var(--r-1); }
 .px .rail .vert { writing-mode: vertical-rl; text-orientation: upright; font: 600 18px/1 var(--f-serif); letter-spacing: .34em; }

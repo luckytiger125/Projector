@@ -8,6 +8,11 @@
   "permissions": [
     "core:default",
     "notification:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized",
     "allow-get-config",
     "allow-save-config",
     "allow-discover-servers"

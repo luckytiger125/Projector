@@ -320,6 +320,15 @@ fn supervise(app: AppHandle) {
 
 // ---------- 窗口 ----------
 
+/// 自绘顶栏（titlebar.js）要用到的窗口操作；设置页的同一批权限写在 capabilities/default.json 里
+const TITLEBAR_PERMS: [&str; 5] = [
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized",
+];
+
 /// 允许服务器网页调用通知插件和本软件的命令（网页的地址是用户填的，只能在运行时加）
 fn allow_remote(app: &AppHandle, url: &Url) {
     let state = app.state::<AppState>();
@@ -333,6 +342,7 @@ fn allow_remote(app: &AppHandle, url: &Url) {
         .permission("allow-upload-local-folder")
         .permission("allow-local-link-path")
         .permission("allow-sync-back");
+    let cap = TITLEBAR_PERMS.iter().fold(cap, |c, p| c.permission(*p));
     if let Err(e) = app.add_capability(cap) {
         eprintln!("添加网页权限失败：{e}");
     }
@@ -813,6 +823,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_ARG])))
+        // 每个页面加载时都注入自绘顶栏（脚本里自己判断：只在 Windows 上画）
+        .plugin(tauri::plugin::Builder::<Wry>::new("titlebar").js_init_script(include_str!("titlebar.js").to_string()).build())
         .manage(AppState {
             cfg: Mutex::new(Config::default()),
             setup_url: Mutex::new(None),
@@ -830,6 +842,9 @@ pub fn run() {
             *app.state::<AppState>().cfg.lock().unwrap() = cfg.clone();
             if let Some(w) = app.get_webview_window("main") {
                 *app.state::<AppState>().setup_url.lock().unwrap() = w.url().ok();
+                // Windows 上去掉系统标题栏，换成 titlebar.js 画的那条；窗口此时还没显示，不会闪
+                #[cfg(windows)]
+                let _ = w.set_decorations(false);
             }
             build_tray(&handle, &cfg)?;
             thread::spawn({

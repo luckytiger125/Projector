@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import Depends, HTTPException, Request
 
-VERSION = "0.8.1"
+VERSION = "0.8.2"
 BASE = Path(__file__).resolve().parent
 # 测试时用环境变量 PROJECTOR_DATA 把数据目录指到临时位置，不碰真实的 data/
 DATA = Path(os.environ["PROJECTOR_DATA"]).resolve() if os.environ.get("PROJECTOR_DATA") else BASE / "data"
